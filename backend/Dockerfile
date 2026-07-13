@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app/backend
+
+COPY backend/pyproject.toml ./pyproject.toml
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic
+COPY backend/api ./api
+COPY backend/core ./core
+COPY backend/database ./database
+COPY backend/models ./models
+COPY backend/repositories ./repositories
+COPY backend/schemas ./schemas
+COPY backend/services ./services
+COPY backend/utils ./utils
+COPY backend/workers ./workers
+COPY backend/main.py ./main.py
+
+RUN pip install --upgrade pip && pip install .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

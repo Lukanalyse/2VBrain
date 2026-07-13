@@ -1,0 +1,24 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+research_os.db
+
+# Node
+node_modules/
+.svelte-kit/
+build/
+dist/
+.vite/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local workspace configuration
+config/workspace.json

@@ -1,0 +1,14 @@
+vault:
+  path: "./vault"
+
+library:
+  path: "./library"
+
+llm:
+  provider: null
+  model: null
+
+vector_store:
+  provider: null
+  path: null
+

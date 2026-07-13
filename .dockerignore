@@ -1,0 +1,12 @@
+.git
+.DS_Store
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.svelte-kit/
+**/node_modules/
+backend/research_os.db
+.env
+backend/.env
+frontend/.env
+docker-data/

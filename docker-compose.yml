@@ -1,0 +1,88 @@
+services:
+  backend:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      RESEARCH_OS_DATABASE_URL: sqlite:////app/data/research_os.db
+      RESEARCH_OS_CONFIG_PATH: /app/config/research-os.yaml
+      RESEARCH_OS_WORKSPACE_CONFIG_PATH: /app/config/workspace.json
+      RESEARCH_OS_VAULT_PATH: /app/vault
+      RESEARCH_OS_LIBRARY_PATH: /app/library
+      RESEARCH_OS_RUNTIME_ENVIRONMENT: docker
+    volumes:
+      - research_os_data:/app/data
+      - ./config:/app/config
+      - ./library:/app/library
+      # Mount the real Obsidian vault at /app/vault. Stored paths (which may be
+      # host paths) are rebased onto this root at read time by VaultManager.
+      - ${RESEARCH_OS_HOST_VAULT_PATH:-./vault}:/app/vault
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "5173"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5173').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app:
+    restart: unless-stopped
+    image: nginx:1.27-alpine
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "7001:80"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "--spider",
+          "http://127.0.0.1/",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  research_os_data:
