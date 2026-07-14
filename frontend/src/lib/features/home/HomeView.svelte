@@ -131,16 +131,16 @@
       ></path>
       <path
         class:wire-active={activeModule === 'resume'}
-        d="M 467 310 H 405 L 348 376 H 250 L 218 410 H 132"
+        d="M 467 310 H 405 L 348 400 H 250 L 218 442 H 132"
       ></path>
       <path
         class:wire-active={activeModule === 'map'}
-        d="M 653 310 H 715 L 772 376 H 870 L 902 410 H 988"
+        d="M 653 310 H 715 L 772 400 H 870 L 902 442 H 988"
       ></path>
       <circle cx="132" cy="152" r="5"></circle>
       <circle cx="988" cy="152" r="5"></circle>
-      <circle cx="132" cy="410" r="5"></circle>
-      <circle cx="988" cy="410" r="5"></circle>
+      <circle cx="132" cy="442" r="5"></circle>
+      <circle cx="988" cy="442" r="5"></circle>
     </svg>
 
     <a
@@ -245,8 +245,8 @@
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(hsl(var(--foreground) / 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.035) 1px, transparent 1px);
+      linear-gradient(hsl(var(--foreground) / 0.052) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.052) 1px, transparent 1px);
     background-size: 32px 32px;
     mask-image: linear-gradient(to bottom, black, transparent 82%);
   }
@@ -258,11 +258,11 @@
     width: min(58vw, 720px);
     height: min(42vw, 470px);
     transform: translate(-50%, -50%);
-    border: 1px solid hsl(var(--accent) / 0.08);
+    border: 1px solid hsl(var(--accent) / 0.17);
     clip-path: polygon(12% 0, 88% 0, 100% 28%, 100% 72%, 88% 100%, 12% 100%, 0 72%, 0 28%);
     box-shadow:
-      inset 0 0 90px hsl(var(--accent) / 0.035),
-      0 0 80px hsl(var(--accent) / 0.025);
+      inset 0 0 90px hsl(var(--accent) / 0.055),
+      0 0 80px hsl(var(--accent) / 0.045);
   }
 
   .hub-heading {
@@ -315,7 +315,7 @@
 
   .hub-circuits path {
     fill: none;
-    stroke: hsl(var(--border));
+    stroke: hsl(var(--border) / 0.84);
     stroke-width: 1.4;
     stroke-dasharray: 5 7;
     vector-effect: non-scaling-stroke;
@@ -331,8 +331,8 @@
   }
 
   .hub-circuits circle {
-    fill: hsl(var(--background));
-    stroke: hsl(var(--accent) / 0.45);
+    fill: hsl(var(--surface));
+    stroke: hsl(var(--accent) / 0.62);
     stroke-width: 1.5;
     vector-effect: non-scaling-stroke;
   }
@@ -365,11 +365,13 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--border) / 0.95);
     border-radius: 7px;
-    background: hsl(var(--background) / 0.96);
+    background: hsl(var(--surface-raised) / 0.97);
     padding: 7px 10px 7px 12px;
-    box-shadow: 0 12px 28px hsl(0 0% 0% / 0.3);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--foreground) / 0.055),
+      0 12px 28px hsl(0 0% 0% / 0.32);
     transition:
       border-color 180ms ease,
       transform 180ms ease;
@@ -412,7 +414,8 @@
     min-height: 72px;
     align-items: center;
     gap: 12px;
-    border-block: 1px solid hsl(var(--border));
+    border-block: 1px solid hsl(var(--border) / 0.88);
+    background: hsl(var(--surface) / 0.34);
     color: inherit;
     text-decoration: none;
     transition:
@@ -430,7 +433,7 @@
   .resume-node:hover,
   .resume-node:focus-visible {
     border-color: hsl(var(--accent) / 0.48);
-    background: hsl(var(--muted) / 0.18);
+    background: hsl(var(--surface-raised) / 0.62);
     outline: none;
   }
 
@@ -445,7 +448,7 @@
   }
 
   .hub-module--map {
-    bottom: 16%;
+    bottom: 6%;
     right: 0;
   }
 
@@ -456,7 +459,7 @@
     height: 9px;
     transform: translateY(-50%);
     border: 1px solid hsl(var(--accent) / 0.56);
-    background: hsl(var(--background));
+    background: hsl(var(--surface));
   }
 
   .hub-module--workspace .module-terminal {
@@ -476,10 +479,10 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--border) / 0.9);
     border-radius: 7px;
     color: hsl(var(--accent));
-    background: hsl(var(--muted) / 0.26);
+    background: hsl(var(--surface-raised) / 0.78);
   }
 
   .module-copy {
@@ -526,7 +529,7 @@
   }
 
   .resume-node {
-    bottom: 16%;
+    bottom: 6%;
     left: 0;
     padding: 9px 6px;
   }
@@ -540,7 +543,7 @@
     margin: -6px auto 0;
     align-items: center;
     gap: 22px;
-    border-top: 1px solid hsl(var(--border));
+    border-top: 1px solid hsl(var(--border) / 0.9);
     color: hsl(var(--muted-foreground));
     font-size: 0.65rem;
   }

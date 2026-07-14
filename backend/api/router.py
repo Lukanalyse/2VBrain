@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from api.routes import (
+    assistant,
     concepts,
     config,
     connections,
@@ -17,6 +18,7 @@ from api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
+api_router.include_router(assistant.router, prefix="/assistant", tags=["assistant"])
 api_router.include_router(config.router, prefix="/config", tags=["config"])
 api_router.include_router(storage.router, prefix="/storage", tags=["storage"])
 api_router.include_router(library.router, prefix="/library", tags=["library"])

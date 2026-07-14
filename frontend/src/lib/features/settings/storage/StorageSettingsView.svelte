@@ -18,10 +18,11 @@
 
   import Card from '$lib/components/ui/Card.svelte';
   import SectionHeader from '$lib/components/ui/SectionHeader.svelte';
+  import SettingsTabs from '$lib/features/settings/components/SettingsTabs.svelte';
   import {
-    getStorageStatus,
     saveVaultPath,
-    validateVault
+    validateVault,
+    waitForStorageStatus
   } from '$lib/services/storage';
   import {
     hasDesktopIntegration,
@@ -44,12 +45,20 @@
 
   onMount(async () => {
     desktopAvailable = hasDesktopIntegration();
-    storageStatus = await getStorageStatus();
-    vaultPath = storageStatus.vault_path ?? '';
-    if (vaultPath) {
-      await validateCurrentVault();
+    try {
+      storageStatus = await waitForStorageStatus();
+      vaultPath = storageStatus.vault_path ?? '';
+      if (vaultPath) {
+        await validateCurrentVault();
+      }
+    } catch (error) {
+      actionMessage =
+        error instanceof Error
+          ? error.message
+          : 'Research OS local service is unavailable.';
+    } finally {
+      isLoading = false;
     }
-    isLoading = false;
   });
 
   async function browseForVault(): Promise<void> {
@@ -157,6 +166,7 @@
 
 <section class="px-4 py-6 lg:px-8 lg:py-8">
   <div class="mx-auto w-full max-w-5xl space-y-6">
+    <SettingsTabs />
     <SectionHeader
       eyebrow="Settings"
       title="Storage"
@@ -171,7 +181,9 @@
           <FolderOpen size={18} strokeWidth={1.8} />
         </div>
         <div class="min-w-0 flex-1">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div
+            class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+          >
             <div>
               <h2 class="text-base font-semibold text-foreground">
                 Obsidian Vault
@@ -259,7 +271,9 @@
               <p>{validation.message}</p>
               {#if validation.error_code}
                 <p class="mt-2 text-xs">
-                  Diagnostic: {validation.validated_by} failed `{validation.failed_check}` for `{validation.normalized_path ?? validation.received_path}`.
+                  Diagnostic: {validation.validated_by} failed `{validation.failed_check}`
+                  for `{validation.normalized_path ??
+                    validation.received_path}`.
                 </p>
               {/if}
               {#if validation.system_error}

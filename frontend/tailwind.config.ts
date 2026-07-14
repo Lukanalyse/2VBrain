@@ -8,6 +8,8 @@ const config: Config = {
       colors: {
         border: 'hsl(var(--border) / <alpha-value>)',
         background: 'hsl(var(--background) / <alpha-value>)',
+        surface: 'hsl(var(--surface) / <alpha-value>)',
+        'surface-raised': 'hsl(var(--surface-raised) / <alpha-value>)',
         foreground: 'hsl(var(--foreground) / <alpha-value>)',
         muted: 'hsl(var(--muted) / <alpha-value>)',
         'muted-foreground': 'hsl(var(--muted-foreground) / <alpha-value>)',
@@ -24,7 +26,7 @@ const config: Config = {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
       },
       boxShadow: {
-        panel: '0 1px 0 rgba(255, 255, 255, 0.04) inset'
+        panel: '0 1px 0 rgba(255, 255, 255, 0.065) inset'
       }
     }
   },

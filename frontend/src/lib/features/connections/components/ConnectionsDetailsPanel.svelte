@@ -35,7 +35,7 @@
 </script>
 
 <aside
-  class="telemetry-panel border-t border-border bg-background/88 p-4 xl:min-h-0 xl:overflow-y-auto xl:border-l xl:border-t-0"
+  class="telemetry-panel border-t border-border/90 bg-surface/90 p-4 xl:min-h-0 xl:overflow-y-auto xl:border-l xl:border-t-0"
 >
   {#if object}
     {@const meta = entityMeta[object.type]}

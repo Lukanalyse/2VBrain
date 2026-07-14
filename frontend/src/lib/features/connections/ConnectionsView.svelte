@@ -213,7 +213,7 @@
   class="map-system grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:h-[calc(100vh-4rem)] xl:grid-cols-[276px_minmax(0,1fr)_304px] xl:overflow-hidden"
 >
   <aside
-    class="map-index border-b border-border bg-background/88 p-4 xl:min-h-0 xl:overflow-hidden xl:border-b-0 xl:border-r"
+    class="map-index border-b border-border/90 bg-surface/90 p-4 xl:min-h-0 xl:overflow-hidden xl:border-b-0 xl:border-r"
   >
     <div class="flex items-center gap-3">
       <span class="map-core" aria-hidden="true">
@@ -231,7 +231,7 @@
     </div>
 
     <label
-      class="mt-5 flex h-10 items-center gap-2 rounded-md border border-border bg-muted/25 px-3 text-sm text-muted-foreground focus-within:border-accent/45"
+      class="mt-5 flex h-10 items-center gap-2 rounded-md border border-border/90 bg-surface-raised/60 px-3 text-sm text-muted-foreground focus-within:border-accent/70 focus-within:ring-2 focus-within:ring-accent/10"
     >
       <Search size={15} />
       <input
@@ -251,7 +251,7 @@
           <button
             class={selected?.id === object.id
               ? 'map-object map-object--active flex w-full items-center gap-3 px-3 py-2.5 text-left'
-              : 'map-object flex w-full items-center gap-3 px-3 py-2.5 text-left text-muted-foreground hover:bg-muted/20 hover:text-foreground'}
+              : 'map-object flex w-full items-center gap-3 px-3 py-2.5 text-left text-muted-foreground hover:bg-muted/40 hover:text-foreground'}
             type="button"
             onclick={() => selectObject(object)}
           >
@@ -277,11 +277,11 @@
       class="map-toolbar flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3"
     >
       <div
-        class="inline-flex rounded-md border border-border bg-muted/[0.08] p-1"
+        class="inline-flex rounded-md border border-border/90 bg-surface-raised/55 p-1"
       >
         <button
           class={viewMode === 'graph'
-            ? 'inline-flex h-8 items-center gap-2 rounded-md bg-background px-3 text-xs font-medium text-foreground shadow-sm'
+            ? 'inline-flex h-8 items-center gap-2 rounded-md bg-muted/75 px-3 text-xs font-medium text-foreground shadow-panel'
             : 'inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium text-muted-foreground hover:text-foreground'}
           type="button"
           onclick={() => (viewMode = 'graph')}
@@ -291,7 +291,7 @@
         </button>
         <button
           class={viewMode === 'list'
-            ? 'inline-flex h-8 items-center gap-2 rounded-md bg-background px-3 text-xs font-medium text-foreground shadow-sm'
+            ? 'inline-flex h-8 items-center gap-2 rounded-md bg-muted/75 px-3 text-xs font-medium text-foreground shadow-panel'
             : 'inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium text-muted-foreground hover:text-foreground'}
           type="button"
           onclick={() => (viewMode = 'list')}
@@ -305,7 +305,7 @@
         <button
           class={filtersOpen
             ? 'inline-flex h-9 items-center gap-2 rounded-md border border-accent/45 bg-accent/10 px-3 text-xs font-medium text-foreground'
-            : 'inline-flex h-9 items-center gap-2 rounded-md border border-border bg-muted/[0.08] px-3 text-xs font-medium text-muted-foreground hover:text-foreground'}
+            : 'inline-flex h-9 items-center gap-2 rounded-md border border-border/90 bg-surface-raised/55 px-3 text-xs font-medium text-muted-foreground hover:bg-muted/55 hover:text-foreground'}
           type="button"
           aria-expanded={filtersOpen}
           onclick={() => (filtersOpen = !filtersOpen)}
@@ -450,8 +450,8 @@
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(hsl(var(--foreground) / 0.024) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.024) 1px, transparent 1px);
+      linear-gradient(hsl(var(--foreground) / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.04) 1px, transparent 1px);
     background-size: 32px 32px;
   }
 
@@ -517,7 +517,7 @@
 
   .map-object--active {
     border-color: hsl(var(--accent) / 0.38);
-    background: hsl(var(--accent) / 0.075);
+    background: hsl(var(--accent) / 0.11);
   }
 
   .map-object--active::after {
@@ -534,7 +534,7 @@
 
   .map-toolbar {
     position: relative;
-    background: hsl(var(--background) / 0.94);
+    background: hsl(var(--surface) / 0.92);
   }
 
   .map-toolbar::after {

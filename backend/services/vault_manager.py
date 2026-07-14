@@ -318,6 +318,30 @@ class VaultManager:
                     return (runtime_root / relative).resolve()
         return path.resolve()
 
+    def is_managed_content_path(self, path: str | Path) -> bool:
+        """Return whether a resolved file stays inside the configured data roots."""
+        try:
+            resolved = Path(path).expanduser().resolve(strict=False)
+        except OSError:
+            return False
+
+        roots: list[Path] = []
+        configured = self._read_config().get("vault_path")
+        if configured:
+            configured_root = Path(configured).expanduser()
+            runtime_root = self._runtime_vault_root(configured_root)
+            if runtime_root is not None:
+                roots.append(runtime_root)
+        roots.append(self._settings.library_path)
+
+        for root in roots:
+            try:
+                resolved.relative_to(root.expanduser().resolve(strict=False))
+            except (OSError, ValueError):
+                continue
+            return True
+        return False
+
     def _is_likely_unmounted_host_path(self, path: Path) -> bool:
         if self._settings.runtime_environment.lower() != "docker":
             return False

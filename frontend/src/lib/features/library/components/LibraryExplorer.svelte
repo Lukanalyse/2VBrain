@@ -224,7 +224,7 @@
   .index-empty {
     min-height: 500px;
     border-block: 1px solid hsl(var(--border));
-    background: hsl(var(--background) / 0.48);
+    background: hsl(var(--surface) / 0.58);
   }
 
   .index-empty h3 {
@@ -234,7 +234,7 @@
   .index-group {
     position: relative;
     border-block: 1px solid hsl(var(--border));
-    background: hsl(var(--background) / 0.58);
+    background: hsl(var(--surface) / 0.72);
   }
 
   .index-group::before {
@@ -245,7 +245,7 @@
     width: 8px;
     height: 8px;
     border: 1px solid hsl(var(--accent) / 0.5);
-    background: hsl(var(--background));
+    background: hsl(var(--surface));
   }
 
   .index-group-header {

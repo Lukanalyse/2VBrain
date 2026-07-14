@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Research OS needs access to your Documents folder to read and update your selected research Vault.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Research OS needs access to Downloads when you select a Vault or import research files from that folder.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Research OS needs access to Desktop when you select a Vault or import research files from that folder.</string>
+</dict>
+</plist>

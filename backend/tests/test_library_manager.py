@@ -1,6 +1,7 @@
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
 
+import pytest
 from pypdf import PdfWriter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -74,6 +75,22 @@ def test_import_pdf_creates_library_item_and_markdown_note(tmp_path: Path) -> No
     assert "# Abstract" in markdown
 
 
+def test_pdf_preview_stays_offline_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = make_manager(tmp_path)
+
+    def fail_if_called(*_: object) -> None:
+        raise AssertionError("online metadata enrichment must be opt-in")
+
+    monkeypatch.setattr("services.library_manager.PaperMetadataProvider.enrich", fail_if_called)
+
+    preview = manager.preview_pdf_metadata(make_pdf())
+
+    assert preview.title == "A Test Research Paper"
+    assert preview.metadata_source == "pdf"
+
+
 def test_import_pdf_detects_duplicate(tmp_path: Path) -> None:
     manager = make_manager(tmp_path)
     manager.import_pdf(make_pdf())
@@ -114,3 +131,18 @@ def test_preview_pdf_metadata_rejects_malformed_pdf(tmp_path: Path) -> None:
         assert "Unable to read PDF metadata" in str(error)
     else:
         raise AssertionError("Expected malformed PDF preview to raise LibraryImportError")
+
+
+def test_preview_pdf_metadata_rejects_oversized_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = make_manager(tmp_path)
+    monkeypatch.setattr("services.library_manager.MAX_PDF_SIZE_BYTES", 8)
+    file = SpooledTemporaryFile()
+    file.write(b"%PDF-1.7 oversized")
+    file.seek(0)
+
+    with pytest.raises(LibraryImportError, match="larger than 100 MB"):
+        manager.preview_pdf_metadata(
+            IncomingDocument(filename="Oversized.pdf", file=file, content_type="application/pdf")
+        )

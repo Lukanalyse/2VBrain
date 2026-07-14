@@ -21,7 +21,7 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     from database.base import Base
-    from models import library_item, object_connection  # noqa: F401
+    from models import assistant_index, library_item, object_connection  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     ensure_library_item_columns()

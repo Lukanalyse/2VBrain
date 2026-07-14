@@ -1,13 +1,22 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+
   import type { LinkableObject } from '$lib/features/linking/types/linking';
   import type { WorkspacePanelContext } from '$lib/features/workspace/types/panels';
 
   type Props = {
     context: WorkspacePanelContext;
     compact?: boolean;
+    autofocus?: boolean;
+    placeholder?: string;
   };
 
-  let { context, compact = false }: Props = $props();
+  let {
+    context,
+    compact = false,
+    autofocus = false,
+    placeholder = 'Start writing...'
+  }: Props = $props();
   let textarea: HTMLTextAreaElement;
   let suggestions = $state<LinkableObject[]>([]);
   let activeSuggestion = $state(0);
@@ -76,6 +85,11 @@
       closeCompletions();
     }
   }
+
+  onMount(() => {
+    if (!autofocus) return;
+    requestAnimationFrame(() => textarea?.focus());
+  });
 </script>
 
 <div class="relative flex h-full min-h-0 flex-col bg-background">
@@ -89,6 +103,7 @@
     ]}
     style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased;"
     spellcheck="true"
+    {placeholder}
     value={context.content}
     oninput={handleInput}
     onkeydown={handleKeydown}

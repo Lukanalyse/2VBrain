@@ -36,6 +36,18 @@ research-os/
 The object model and recommended workflow are documented in
 [`docs/research-os-object-model.md`](docs/research-os-object-model.md).
 
+## Local Privacy
+
+- Project notes, PDFs, the SQLite index, and local workspace/model settings are
+  excluded from Git. Only placeholders and example configuration are tracked.
+- The project assistant talks only to Ollama on the local loopback interface and
+  retrieves evidence only from the selected project's managed Vault sources.
+- Online bibliographic enrichment is disabled by default. It can be enabled
+  explicitly with `RESEARCH_OS_ENABLE_ONLINE_METADATA=true`; this sends a PDF's
+  DOI or title to Crossref or OpenAlex.
+- The Docker application is published on `127.0.0.1:7001`, not on the local
+  network.
+
 ## Development
 
 Full Docker stack:

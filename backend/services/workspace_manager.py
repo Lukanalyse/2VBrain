@@ -69,7 +69,10 @@ class WorkspaceManager:
         ]
         return ActiveWorkspaceSummary(
             reading=papers[:10],
-            writing=self._linking_engine.search("", [LinkableType.review])[:10],
+            writing=self._linking_engine.search(
+                "",
+                [LinkableType.concept, LinkableType.note, LinkableType.review],
+            )[:16],
             projects=self._linking_engine.search("", [LinkableType.project])[:10],
             brainstorms=self._linking_engine.search("", [LinkableType.brainstorm])[:10],
         )

@@ -6,7 +6,7 @@
   import FirstRunVaultSetup from '$lib/features/onboarding/FirstRunVaultSetup.svelte';
   import GlobalSearch from '$lib/features/search/GlobalSearch.svelte';
   import { navigationItems } from '$lib/layouts/navigation';
-  import { getStorageStatus } from '$lib/services/storage';
+  import { waitForStorageStatus } from '$lib/services/storage';
   import type { StorageStatus } from '$lib/types/storage';
   import { cn } from '$lib/utils';
 
@@ -19,9 +19,10 @@
 
   onMount(async () => {
     try {
-      storageStatus = await getStorageStatus();
+      storageStatus = await waitForStorageStatus();
+      storageError = null;
     } catch {
-      storageError = 'Storage status unavailable';
+      storageError = 'Local service unavailable. Restart Research OS to retry.';
     }
   });
 </script>
@@ -30,11 +31,17 @@
   <title>Research OS</title>
 </svelte:head>
 
-<div class="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+<div
+  class="flex h-screen flex-col overflow-hidden bg-background text-foreground"
+>
   <header
-    class="relative z-30 flex h-16 shrink-0 items-center border-b border-border bg-background/95 px-3 sm:px-5"
+    class="relative z-30 flex h-16 shrink-0 items-center border-b border-border/90 bg-surface/95 px-3 shadow-panel sm:px-5"
   >
-    <a class="flex min-w-0 items-center gap-3" href="/" aria-label="Research OS Home">
+    <a
+      class="flex min-w-0 items-center gap-3"
+      href="/"
+      aria-label="Research OS Home"
+    >
       <span class="core-mark" aria-hidden="true">
         <Cpu size={17} strokeWidth={1.8} />
       </span>
@@ -47,7 +54,7 @@
     </a>
 
     <nav
-      class="absolute left-1/2 hidden h-10 -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-muted/[0.08] p-1 md:flex"
+      class="absolute left-1/2 hidden h-10 -translate-x-1/2 items-center gap-1 rounded-lg border border-border/90 bg-surface-raised/65 p-1 md:flex"
       aria-label="Primary navigation"
     >
       {#each primaryItems as item}
@@ -57,8 +64,8 @@
           class={cn(
             'flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors',
             currentPath === item.href
-              ? 'bg-muted text-foreground shadow-panel'
-              : 'text-muted-foreground hover:bg-muted/45 hover:text-foreground'
+              ? 'bg-muted/80 text-foreground shadow-panel'
+              : 'text-muted-foreground hover:bg-muted/65 hover:text-foreground'
           )}
           aria-current={currentPath === item.href ? 'page' : undefined}
         >
@@ -86,8 +93,9 @@
       <a
         href="/settings/storage"
         class={cn(
-          'inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-muted/15 text-muted-foreground transition hover:bg-muted/45 hover:text-foreground',
-          currentPath.startsWith('/settings') && 'border-accent/40 text-foreground'
+          'inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/90 bg-surface-raised/70 text-muted-foreground transition hover:border-accent/40 hover:bg-muted/65 hover:text-foreground',
+          currentPath.startsWith('/settings') &&
+            'border-accent/40 text-foreground'
         )}
         aria-label="Settings"
         title="Settings"
@@ -96,7 +104,9 @@
       </a>
     </div>
 
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-px core-signal"></div>
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-0 h-px core-signal"
+    ></div>
   </header>
 
   <main class="min-h-0 flex-1 overflow-y-auto pb-16 md:pb-0">
@@ -111,7 +121,7 @@
   </main>
 
   <nav
-    class="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-4 border-t border-border bg-background/96 px-2 backdrop-blur md:hidden"
+    class="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-4 border-t border-border/90 bg-surface/95 px-2 shadow-[0_-8px_24px_hsl(0_0%_0%/0.22)] backdrop-blur md:hidden"
     aria-label="Primary navigation"
   >
     {#each primaryItems as item}
@@ -155,9 +165,13 @@
     border-radius: 7px;
     color: hsl(var(--accent));
     background:
-      linear-gradient(hsl(var(--foreground) / 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.05) 1px, transparent 1px),
-      hsl(var(--muted) / 0.52);
+      linear-gradient(hsl(var(--foreground) / 0.075) 1px, transparent 1px),
+      linear-gradient(
+        90deg,
+        hsl(var(--foreground) / 0.075) 1px,
+        transparent 1px
+      ),
+      hsl(var(--surface-raised) / 0.88);
     background-size: 6px 6px;
     box-shadow: inset 0 0 0 3px hsl(var(--background) / 0.45);
   }

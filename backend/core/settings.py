@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./research_os.db"
     config_path: Path = Field(default=Path("../config/research-os.yaml"))
     workspace_config_path: Path = Field(default=Path("../config/workspace.json"))
+    assistant_config_path: Path = Field(default=Path("../config/assistant.json"))
 
     vault_path: Path = Path("../vault")
     library_path: Path = Path("../library")
@@ -20,6 +21,11 @@ class Settings(BaseSettings):
 
     llm_provider: str | None = None
     vector_store_provider: str | None = None
+    enable_online_metadata: bool = False
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_chat_model: str = "qwen3:14b"
+    ollama_embedding_model: str = "embeddinggemma"
+    ollama_context_length: int = 16384
     runtime_environment: str = "local"
 
     model_config = SettingsConfigDict(env_prefix="RESEARCH_OS_", env_file=".env")

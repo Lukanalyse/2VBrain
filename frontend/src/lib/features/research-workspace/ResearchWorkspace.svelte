@@ -4,7 +4,9 @@
     Cpu,
     Eye,
     ExternalLink,
+    GripVertical,
     Pencil,
+    Plus,
     Search,
     X
   } from '@lucide/svelte';
@@ -17,8 +19,11 @@
     LinkableObject,
     LinkableType
   } from '$lib/features/linking/types/linking';
+  import { createLinks } from '$lib/features/linking/services/linkingApi';
   import ProjectDashboard from '$lib/features/workspace/components/ProjectDashboard.svelte';
+  import MarkdownPanel from '$lib/features/workspace/panels/MarkdownPanel.svelte';
   import type { WorkspacePanelContext } from '$lib/features/workspace/types/panels';
+  import { createConcept } from '$lib/features/concepts/services/conceptsApi';
   import {
     getExplorerDetail,
     searchExplorer
@@ -28,6 +33,9 @@
     getWorkspaceMarkdown,
     getWorkspacePdfUrl,
     getActiveWorkspace,
+    createBrainstorm,
+    createProject,
+    createWorkspaceNote,
     saveWorkspaceMarkdown,
     updateWorkspaceStatus
   } from '$lib/features/workspace/services/workspaceApi';
@@ -37,8 +45,15 @@
   type Filter = 'all' | LinkableType;
   type SaveState = 'saved' | 'unsaved' | 'saving' | 'error';
   type ViewerTab = 'pdf' | 'notes';
+  type CreateKind = 'note' | 'brainstorm' | 'concept' | 'project';
 
   const filters: Filter[] = ['all', ...entityTypes];
+  const createKinds: CreateKind[] = [
+    'note',
+    'brainstorm',
+    'concept',
+    'project'
+  ];
   const readingStatuses: ReadingStatus[] = [
     'unread',
     'reading',
@@ -56,6 +71,7 @@
   let selected = $state<LinkableObject | null>(null);
   let detail = $state<ExplorerObjectDetail | null>(null);
   let content = $state('');
+  let documentPrefix = $state('');
   let lastSaved = $state('');
   let saveState = $state<SaveState>('saved');
   let detailLoading = $state(false);
@@ -64,6 +80,13 @@
   let showPreview = $state(false);
   let pdfMessage = $state<string | null>(null);
   let handledRequest = $state<string | null>(null);
+  let showCreate = $state(false);
+  let createKind = $state<CreateKind>('note');
+  let createTitle = $state('');
+  let createBusy = $state(false);
+  let createError = $state<string | null>(null);
+  let focusEditorAfterOpen = $state(false);
+  let createInput = $state<HTMLInputElement>();
 
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,8 +94,14 @@
   const isPaper = $derived(selected?.type === 'paper');
   const relatedItems = $derived(detail?.all_related ?? []);
   const requestedObjectId = $derived($page.url.searchParams.get('open'));
-  const projectContext = $derived<WorkspacePanelContext | null>(
-    selected && selected.type === 'project' && detail
+  const wordCount = $derived(
+    content.trim() ? content.trim().split(/\s+/).length : 0
+  );
+  const noteContextTitle = $derived(
+    selected?.type === 'note' ? selected.subtitle : selected?.title
+  );
+  const panelContext = $derived<WorkspacePanelContext | null>(
+    selected && detail
       ? {
           object: selected,
           detail,
@@ -97,10 +126,18 @@
           createBrainstormFromTitle: async () => null,
           linkObjectToTarget: async () => {},
           refreshObject: async () => {
-            if (selected) await openObject(selected);
+            if (!selected) return;
+            await openObject(selected, false, true);
+            await loadList(query, activeFilter);
           }
         }
       : null
+  );
+  const projectContext = $derived(
+    selected?.type === 'project' ? panelContext : null
+  );
+  const editorContext = $derived(
+    selected?.type !== 'project' ? panelContext : null
   );
 
   // Reload the list whenever the query or the type filter changes (debounced).
@@ -170,10 +207,15 @@
     }
   }
 
-  async function openObject(object: LinkableObject): Promise<void> {
-    if (selected?.id === object.id) return;
+  async function openObject(
+    object: LinkableObject,
+    focusEditor = false,
+    force = false
+  ): Promise<void> {
+    if (selected?.id === object.id && !force) return;
     await flushSave();
     selected = object;
+    focusEditorAfterOpen = focusEditor;
     detail = null;
     detailLoading = true;
     pdfMessage = null;
@@ -186,9 +228,11 @@
       ]);
       detail = objectDetail;
       selected = objectDetail.object;
-      content = markdown.content;
       currentReadingStatus = readingStatusFromMarkdown(markdown.content);
-      lastSaved = markdown.content;
+      const editable = splitMarkdownDocument(markdown.content);
+      documentPrefix = editable.prefix;
+      content = editable.body;
+      lastSaved = editable.body;
       saveState = 'saved';
     } catch (error) {
       listError =
@@ -210,10 +254,15 @@
     const target = selected.id;
     saveState = 'saving';
     try {
-      const saved = await saveWorkspaceMarkdown(target, content);
+      const saved = await saveWorkspaceMarkdown(
+        target,
+        `${documentPrefix}${content}`
+      );
       if (selected?.id !== target) return;
-      lastSaved = saved.content;
-      saveState = content === saved.content ? 'saved' : 'unsaved';
+      const editable = splitMarkdownDocument(saved.content);
+      documentPrefix = editable.prefix;
+      lastSaved = editable.body;
+      saveState = content === editable.body ? 'saved' : 'unsaved';
     } catch {
       saveState = 'error';
     }
@@ -257,6 +306,7 @@
     selected = null;
     detail = null;
     content = '';
+    documentPrefix = '';
     lastSaved = '';
   }
 
@@ -276,11 +326,128 @@
     return filter === 'all' ? 'All' : entityMeta[filter].plural;
   }
 
+  function splitMarkdownDocument(markdown: string): {
+    prefix: string;
+    body: string;
+  } {
+    const frontmatter = markdown.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n*/);
+    if (!frontmatter) return { prefix: '', body: markdown };
+    return {
+      prefix: frontmatter[0],
+      body: markdown.slice(frontmatter[0].length)
+    };
+  }
+
+  function markdownStem(path: string): string {
+    return (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, '');
+  }
+
+  function startObjectDrag(event: DragEvent, object: LinkableObject): void {
+    if (selected?.type !== 'project' || object.id === selected.id) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer?.setData(
+      'application/x-research-object',
+      JSON.stringify(object)
+    );
+    event.dataTransfer?.setData('text/plain', object.id);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+  }
+
+  function openCreate(kind: CreateKind = selected ? 'note' : 'brainstorm'): void {
+    showCreate = true;
+    createKind = kind;
+    createTitle = '';
+    createError = null;
+    requestAnimationFrame(() => createInput?.focus());
+  }
+
+  function closeCreate(): void {
+    showCreate = false;
+    createTitle = '';
+    createError = null;
+  }
+
+  function selectCreateKind(kind: CreateKind): void {
+    if (kind === 'note' && !selected) return;
+    createKind = kind;
+    createError = null;
+    requestAnimationFrame(() => createInput?.focus());
+  }
+
+  async function resolveNoteParent(): Promise<LinkableObject | null> {
+    if (!selected) return null;
+    if (selected.type !== 'note') return selected;
+    const parentTitle = selected.subtitle;
+    const candidates = await searchExplorer(parentTitle);
+    return (
+      candidates.find(
+        (item) => item.type !== 'note' && item.title === parentTitle
+      ) ?? null
+    );
+  }
+
+  async function createWriting(): Promise<void> {
+    const title = createTitle.trim();
+    if (!title || createBusy) return;
+    createBusy = true;
+    createError = null;
+
+    try {
+      let createdObject: LinkableObject;
+      if (createKind === 'note') {
+        const parent = await resolveNoteParent();
+        if (!parent) throw new Error('Select a thread before creating a note.');
+        const created = await createWorkspaceNote(parent.id, title);
+        createdObject = {
+          id: `note:${markdownStem(created.object.markdown_path)}::${created.note.id}`,
+          type: 'note',
+          title: created.note.title,
+          subtitle: created.object.title,
+          markdown_path: created.note.path
+        };
+        if (parent.type === 'project') {
+          await createLinks(parent.id, [createdObject.id]);
+        }
+      } else if (createKind === 'brainstorm') {
+        createdObject = (await createBrainstorm(title)).object;
+      } else if (createKind === 'concept') {
+        const created = await createConcept({
+          name: title,
+          description: '',
+          category: 'Research',
+          tags: []
+        });
+        createdObject = {
+          id: `concept:${created.slug}`,
+          type: 'concept',
+          title: created.name,
+          subtitle: created.category || 'Concept',
+          markdown_path: created.markdown_path
+        };
+      } else {
+        createdObject = (await createProject(title)).object;
+      }
+
+      query = '';
+      activeFilter = 'all';
+      closeCreate();
+      await openObject(createdObject, createdObject.type !== 'project');
+      await loadList('', 'all');
+    } catch (error) {
+      createError =
+        error instanceof Error ? error.message : 'Unable to create this item.';
+    } finally {
+      createBusy = false;
+    }
+  }
+
 </script>
 
 <section class="workspace-grid h-full overflow-hidden bg-background">
   <!-- LEFT: focused list of objects explicitly kept in active work -->
-  <aside class="workspace-rail flex min-w-0 flex-col border-r border-border bg-background/88">
+  <aside class="workspace-rail flex min-w-0 flex-col border-r border-border/90 bg-surface/90">
     <div class="relative border-b border-border p-4">
       <div class="flex items-center gap-3">
         <span class="rail-core" aria-hidden="true">
@@ -296,8 +463,88 @@
         </span>
         <span class="rail-count">{items.length}</span>
       </div>
+
+      {#if showCreate}
+        <div class="quick-create mt-3 border border-accent/35 bg-surface-raised/80 p-3 shadow-panel">
+          <div class="flex items-center justify-between gap-2">
+            <span class="inline-flex items-center gap-2 text-xs font-semibold uppercase text-accent">
+              <Plus size={13} /> New writing
+            </span>
+            <button
+              type="button"
+              class="ros-btn-icon h-7 w-7"
+              aria-label="Close new writing"
+              onclick={closeCreate}
+            >
+              <X size={13} />
+            </button>
+          </div>
+
+          <div class="mt-3 grid grid-cols-2 gap-1.5">
+            {#each createKinds as kind}
+              {@const CreateIcon = entityMeta[kind].icon}
+              <button
+                type="button"
+                class={[
+                  'flex h-8 min-w-0 items-center gap-2 rounded-md border px-2 text-xs transition',
+                  createKind === kind
+                    ? `${entityMeta[kind].border} ${entityMeta[kind].tint} text-foreground`
+                    : 'border-border/80 bg-surface text-muted-foreground hover:text-foreground',
+                  kind === 'note' && !selected ? 'cursor-not-allowed opacity-40' : ''
+                ]}
+                disabled={kind === 'note' && !selected}
+                aria-pressed={createKind === kind}
+                onclick={() => selectCreateKind(kind)}
+              >
+                <CreateIcon size={13} class={entityMeta[kind].text} />
+                <span class="truncate">{entityMeta[kind].label}</span>
+              </button>
+            {/each}
+          </div>
+
+          {#if createKind === 'note' && noteContextTitle}
+            <p class="mt-2 truncate text-[0.68rem] text-muted-foreground">
+              Linked to <span class="text-foreground">{noteContextTitle}</span>
+            </p>
+          {/if}
+
+          <div class="mt-2 flex gap-2">
+            <input
+              bind:this={createInput}
+              bind:value={createTitle}
+              class="ros-input min-w-0"
+              placeholder={`${entityMeta[createKind].label} title`}
+              onkeydown={(event) => {
+                if (event.key === 'Enter') void createWriting();
+                if (event.key === 'Escape') closeCreate();
+              }}
+            />
+            <button
+              type="button"
+              class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-accent-foreground disabled:opacity-45"
+              disabled={!createTitle.trim() || createBusy}
+              onclick={createWriting}
+            >
+              <Plus size={13} /> Create
+            </button>
+          </div>
+
+          {#if createError}
+            <p class="mt-2 text-xs text-entity-review">{createError}</p>
+          {/if}
+        </div>
+      {:else}
+        <button
+          type="button"
+          class="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-md border border-accent/45 bg-accent/10 text-sm font-semibold text-accent transition hover:border-accent/70 hover:bg-accent/15"
+          onclick={() => openCreate()}
+        >
+          <Plus size={16} /> New writing
+        </button>
+      {/if}
+
       <label
-        class="mt-4 flex h-10 items-center gap-2 rounded-md border border-border bg-background/75 px-3 text-sm text-muted-foreground focus-within:border-accent/55"
+        class="mt-3 flex h-10 items-center gap-2 rounded-md border border-border/90 bg-surface-raised/55 px-3 text-sm text-muted-foreground focus-within:border-accent/70 focus-within:ring-2 focus-within:ring-accent/10"
       >
         <Search size={15} />
         <input
@@ -325,7 +572,7 @@
               'inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[0.65rem] transition',
               activeFilter === filter
                 ? 'border-accent/45 bg-accent/10 text-foreground'
-                : 'border-border bg-muted/[0.08] text-muted-foreground hover:bg-muted/30 hover:text-foreground'
+                : 'border-border/90 bg-surface-raised/45 text-muted-foreground hover:bg-muted/55 hover:text-foreground'
             ]}
             title={filterLabel(filter)}
             onclick={() => (activeFilter = filter)}
@@ -356,13 +603,18 @@
             <li class="workspace-thread-slot">
               <button
                 type="button"
+                draggable={selected?.type === 'project' && item.id !== selected.id}
                 class={[
                   'workspace-thread flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition',
+                  selected?.type === 'project' && item.id !== selected.id
+                    ? 'cursor-grab active:cursor-grabbing'
+                    : '',
                   selected?.id === item.id
                     ? 'workspace-thread--active text-foreground'
-                    : 'text-muted-foreground hover:bg-muted/20 hover:text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
                 ]}
                 onclick={() => openObject(item)}
+                ondragstart={(event) => startObjectDrag(event, item)}
               >
                 <span class={`thread-icon ${entityMeta[item.type].text}`}>
                   <Icon size={14} />
@@ -375,6 +627,13 @@
                       : ''}
                   </span>
                 </span>
+                {#if selected?.type === 'project' && item.id !== selected.id}
+                  <GripVertical
+                    size={13}
+                    class="mt-1 shrink-0 text-muted-foreground/55"
+                    aria-label="Drag into project"
+                  />
+                {/if}
                 <span class="thread-port" aria-hidden="true"></span>
               </button>
             </li>
@@ -396,11 +655,18 @@
           <p class="mt-2 text-sm leading-6 text-muted-foreground">
             Reading and writing happen here. The complete index stays in Library.
           </p>
+          <button
+            type="button"
+            class="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground"
+            onclick={() => openCreate('brainstorm')}
+          >
+            <Plus size={16} /> New writing
+          </button>
         </div>
       </div>
     {:else}
       {@const Icon = entityMeta[selected.type].icon}
-      <header class="workspace-document-header flex items-center gap-3 border-b border-border px-5 py-3">
+      <header class="workspace-document-header flex items-center gap-3 border-b border-border/90 bg-surface/60 px-5 py-3 shadow-panel">
         <span class={`document-node ${entityMeta[selected.type].text}`}>
           <Icon size={17} />
         </span>
@@ -434,6 +700,14 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex h-8 items-center gap-1.5 rounded-md border border-entity-note/35 bg-entity-note/[0.08] px-2.5 text-xs text-entity-note transition hover:bg-entity-note/15"
+            aria-label="Create note for current thread"
+            onclick={() => openCreate('note')}
+          >
+            <Plus size={13} /> <span class="hidden sm:inline">Note</span>
+          </button>
           {#if isPaper}
             <select
               class="h-8 rounded-md border border-border bg-muted/20 px-2 text-xs text-muted-foreground outline-none"
@@ -466,7 +740,7 @@
       </header>
 
       {#if isPaper}
-        <div class="flex items-center gap-1 border-b border-border bg-muted/[0.05] px-3 py-1.5">
+        <div class="flex items-center gap-1 border-b border-border/90 bg-surface/60 px-3 py-1.5">
           <button
             type="button"
             class={[
@@ -511,24 +785,30 @@
           ></iframe>
         {:else if projectContext}
           <ProjectDashboard context={projectContext} />
-        {:else}
+        {:else if editorContext}
           <!-- Markdown editor / preview (notes, ideas, projects, concepts) -->
-          <div class="flex items-center justify-between border-b border-border bg-muted/[0.04] px-5 py-1.5">
-            <span class="inline-flex items-center gap-2 text-xs text-muted-foreground">
-              <Cpu size={12} class="text-accent" />
-              Writing surface
+          <div class="flex items-center justify-between border-b border-border/90 bg-surface/50 px-5 py-1.5">
+            <span class="inline-flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+              <span class="inline-flex items-center gap-2">
+                <Cpu size={12} class="text-accent" />
+                Writing surface
+              </span>
+              <span class="h-3 w-px bg-border"></span>
+              <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
             </span>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
-              onclick={() => (showPreview = !showPreview)}
-            >
-              {#if showPreview}
-                <Pencil size={13} /> Edit
-              {:else}
-                <Eye size={13} /> Preview
-              {/if}
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+                onclick={() => (showPreview = !showPreview)}
+              >
+                {#if showPreview}
+                  <Pencil size={13} /> Edit
+                {:else}
+                  <Eye size={13} /> Preview
+                {/if}
+              </button>
+            </div>
           </div>
           {#if showPreview}
             <div class="min-h-0 flex-1 overflow-y-auto">
@@ -540,13 +820,17 @@
               />
             </div>
           {:else}
-            <textarea
-              value={content}
-              oninput={(event) => updateContent(event.currentTarget.value)}
-              spellcheck="false"
-              placeholder="Write here..."
-              class="workspace-editor min-h-0 flex-1 resize-none bg-transparent px-6 py-5 font-mono text-sm leading-6 text-foreground outline-none"
-            ></textarea>
+            <div class="writing-stage min-h-0 flex-1 overflow-hidden p-3 sm:p-5">
+              <div class="mx-auto h-full max-w-5xl overflow-hidden border-x border-border/80 bg-surface/35 shadow-panel">
+                {#key selected.id}
+                  <MarkdownPanel
+                    context={editorContext}
+                    autofocus={focusEditorAfterOpen}
+                    placeholder={`Write in ${selected.title}...`}
+                  />
+                {/key}
+              </div>
+            </div>
           {/if}
         {/if}
 
@@ -582,8 +866,8 @@
     display: grid;
     grid-template-columns: clamp(260px, 26vw, 360px) minmax(0, 1fr);
     background-image:
-      linear-gradient(hsl(var(--foreground) / 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.025) 1px, transparent 1px);
+      linear-gradient(hsl(var(--foreground) / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.04) 1px, transparent 1px);
     background-size: 32px 32px;
   }
 
@@ -662,7 +946,7 @@
 
   .workspace-thread--active {
     border-color: hsl(var(--accent) / 0.35);
-    background: hsl(var(--accent) / 0.075);
+    background: hsl(var(--accent) / 0.11);
   }
 
   .thread-icon {
@@ -670,7 +954,7 @@
     z-index: 1;
     width: 28px;
     height: 28px;
-    background: hsl(var(--background));
+    background: hsl(var(--surface));
   }
 
   .thread-port {
@@ -710,11 +994,17 @@
     height: 36px;
   }
 
-  .workspace-editor {
-    background-image:
-      linear-gradient(90deg, hsl(var(--accent) / 0.05) 1px, transparent 1px),
-      linear-gradient(hsl(var(--foreground) / 0.018) 1px, transparent 1px);
-    background-size: 40px 100%, 100% 28px;
+  .quick-create {
+    border-radius: 7px;
+    box-shadow:
+      inset 0 1px 0 hsl(var(--foreground) / 0.04),
+      0 12px 30px hsl(210 20% 2% / 0.2);
+  }
+
+  .writing-stage {
+    background:
+      linear-gradient(90deg, transparent 0, hsl(var(--accent) / 0.035) 50%, transparent 100%),
+      hsl(var(--background) / 0.88);
   }
 
   @media (max-width: 820px) {

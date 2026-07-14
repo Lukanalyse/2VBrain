@@ -312,8 +312,10 @@ function renderInline(source: string, state: RenderState): string {
   output = output.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
     (_match, alt: string, src: string) => {
-      const safeAlt = escapeHtml(alt);
-      const safeSrc = escapeAttribute(src);
+      const safeAlt = alt;
+      const allowedSrc = safeMarkdownUrl(src, 'image');
+      if (!allowedSrc) return safeAlt;
+      const safeSrc = allowedSrc.replaceAll('`', '&#096;');
       return reserve(
         `<figure><img src="${safeSrc}" alt="${safeAlt}" loading="lazy" />${safeAlt ? `<figcaption>${safeAlt}</figcaption>` : ''}</figure>`,
         state
@@ -322,7 +324,12 @@ function renderInline(source: string, state: RenderState): string {
   );
   output = output.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noreferrer">$1</a>'
+    (_match, label: string, href: string) => {
+      const allowedHref = safeMarkdownUrl(href, 'link');
+      if (!allowedHref) return label;
+      const safeHref = allowedHref.replaceAll('`', '&#096;');
+      return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    }
   );
   output = output.replace(
     /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
@@ -379,4 +386,22 @@ function escapeHtml(source: string): string {
 
 function escapeAttribute(source: string): string {
   return escapeHtml(source).replaceAll('`', '&#096;');
+}
+
+function safeMarkdownUrl(
+  source: string,
+  kind: 'image' | 'link'
+): string | null {
+  const value = source.trim();
+  if (!value || value.startsWith('//')) return null;
+  if (/^(#|\/|\.\/|\.\.\/)/.test(value)) return value;
+
+  const scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/)?.[1].toLowerCase();
+  if (!scheme) return value;
+  if (scheme === 'http' || scheme === 'https') return value;
+  if (kind === 'link' && scheme === 'mailto') return value;
+  if (kind === 'image' && /^data:image\/(png|gif|jpe?g|webp);base64,/i.test(value)) {
+    return value;
+  }
+  return null;
 }

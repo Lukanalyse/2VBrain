@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+*.egg-info/
 research_os.db
 
 # Node
@@ -14,6 +15,17 @@ node_modules/
 build/
 dist/
 .vite/
+frontend/src-tauri/target/
+frontend/src-tauri/gen/schemas/
+frontend/src-tauri/binaries/*
+!frontend/src-tauri/binaries/.gitkeep
+frontend/src-tauri/icons/android/
+frontend/src-tauri/icons/ios/
+frontend/src-tauri/icons/Square*Logo.png
+frontend/src-tauri/icons/StoreLogo.png
+frontend/src-tauri/icons/64x64.png
+frontend/src-tauri/icons/icon.png
+backend/.desktop-build/
 
 # Environment
 .env
@@ -22,3 +34,15 @@ dist/
 
 # Local workspace configuration
 config/workspace.json
+config/assistant.json
+
+# Local research data
+/library/**
+!/library/README.md
+/vault/**
+!/vault/README.md
+!/vault/.obsidian/
+!/vault/.obsidian/.gitkeep
+
+# Local Codex generation artifacts
+.codex-pet-runs/

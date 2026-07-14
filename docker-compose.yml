@@ -11,6 +11,7 @@ services:
       RESEARCH_OS_VAULT_PATH: /app/vault
       RESEARCH_OS_LIBRARY_PATH: /app/library
       RESEARCH_OS_RUNTIME_ENVIRONMENT: docker
+      RESEARCH_OS_OLLAMA_BASE_URL: http://host.docker.internal:11434
     volumes:
       - research_os_data:/app/data
       - ./config:/app/config
@@ -20,6 +21,8 @@ services:
       - ${RESEARCH_OS_HOST_VAULT_PATH:-./vault}:/app/vault
     expose:
       - "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test:
         [
@@ -69,7 +72,7 @@ services:
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - "7001:80"
+      - "127.0.0.1:7001:80"
     healthcheck:
       test:
         [

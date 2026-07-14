@@ -1,0 +1,17 @@
+[package]
+name = "research-os"
+version = "0.1.0"
+description = "A cognitive operating system for personal research."
+authors = ["Lukanalyse"]
+edition = "2021"
+
+[lib]
+name = "research_os_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"

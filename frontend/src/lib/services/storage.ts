@@ -22,6 +22,28 @@ export function getStorageStatus(): Promise<StorageStatus> {
   return request<StorageStatus>('/storage');
 }
 
+export async function waitForStorageStatus(
+  attempts = 20,
+  delayMs = 250
+): Promise<StorageStatus> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await getStorageStatus();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Research OS local service is unavailable.');
+}
+
 export function validateVault(vaultPath: string): Promise<VaultValidation> {
   return request<VaultValidation>('/storage/vault/validate', {
     method: 'POST',

@@ -92,7 +92,7 @@
   .field-ring {
     position: absolute;
     inset: 12%;
-    border: 1px solid hsl(var(--accent) / 0.2);
+    border: 1px solid hsl(var(--accent) / 0.27);
     clip-path: polygon(16% 0, 84% 0, 100% 16%, 100% 84%, 84% 100%, 16% 100%, 0 84%, 0 16%);
   }
 
@@ -102,7 +102,7 @@
 
   .field-ring--inner {
     inset: 21%;
-    border-color: hsl(var(--entity-concept) / 0.34);
+    border-color: hsl(var(--entity-concept) / 0.43);
     animation: core-field-pulse 3.6s 1.8s ease-in-out infinite;
   }
 
@@ -128,7 +128,7 @@
 
   .field-axis {
     position: absolute;
-    background: hsl(var(--accent) / 0.13);
+    background: hsl(var(--accent) / 0.18);
   }
 
   .field-axis--horizontal {
@@ -166,14 +166,14 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    border: 1px solid hsl(var(--accent) / 0.46);
+    border: 1px solid hsl(var(--accent) / 0.62);
     border-radius: 8px;
     background:
-      linear-gradient(145deg, hsl(var(--muted) / 0.92), hsl(var(--background)) 68%),
-      hsl(var(--background));
+      linear-gradient(145deg, hsl(var(--surface-raised) / 0.98), hsl(var(--surface)) 68%),
+      hsl(var(--surface));
     box-shadow:
-      inset 0 0 0 6px hsl(var(--foreground) / 0.025),
-      inset 0 0 0 7px hsl(var(--border) / 0.7),
+      inset 0 0 0 6px hsl(var(--foreground) / 0.04),
+      inset 0 0 0 7px hsl(var(--border) / 0.82),
       0 22px 44px hsl(0 0% 0% / 0.36);
   }
 
@@ -181,8 +181,8 @@
     position: absolute;
     inset: 15px;
     background-image:
-      linear-gradient(hsl(var(--foreground) / 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.07) 1px, transparent 1px);
+      linear-gradient(hsl(var(--foreground) / 0.095) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.095) 1px, transparent 1px);
     background-size: 10px 10px;
     mask-image: linear-gradient(to bottom, transparent, black 24%, black 76%, transparent);
   }
@@ -196,7 +196,7 @@
     place-items: center;
     border: 1px solid hsl(var(--entity-concept) / 0.48);
     border-radius: 8px;
-    background: hsl(var(--background) / 0.86);
+    background: hsl(var(--surface) / 0.94);
     box-shadow:
       inset 0 0 24px hsl(var(--entity-concept) / 0.1),
       0 0 28px hsl(var(--entity-concept) / 0.1);
@@ -316,7 +316,7 @@
     width: 4px;
     height: 16px;
     border: 1px solid hsl(var(--border));
-    background: hsl(var(--muted-foreground) / 0.55);
+    background: hsl(var(--muted-foreground) / 0.68);
   }
 
   .pin-column {
@@ -337,7 +337,7 @@
     width: 16px;
     height: 4px;
     border: 1px solid hsl(var(--border));
-    background: hsl(var(--muted-foreground) / 0.55);
+    background: hsl(var(--muted-foreground) / 0.68);
   }
 
   @keyframes core-field-pulse {

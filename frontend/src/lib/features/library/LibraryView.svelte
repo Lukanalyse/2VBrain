@@ -193,8 +193,8 @@
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(hsl(var(--foreground) / 0.028) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.028) 1px, transparent 1px);
+      linear-gradient(hsl(var(--foreground) / 0.043) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.043) 1px, transparent 1px);
     background-size: 32px 32px;
     mask-image: linear-gradient(to bottom, black, transparent 88%);
   }
@@ -228,7 +228,7 @@
     background:
       linear-gradient(hsl(var(--foreground) / 0.05) 1px, transparent 1px),
       linear-gradient(90deg, hsl(var(--foreground) / 0.05) 1px, transparent 1px),
-      hsl(var(--muted) / 0.25);
+      hsl(var(--surface-raised) / 0.72);
     background-size: 7px 7px;
     box-shadow: inset 0 0 18px hsl(var(--accent) / 0.06);
   }

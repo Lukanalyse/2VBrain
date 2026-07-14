@@ -18,6 +18,9 @@ class LibraryImportError(Exception):
     pass
 
 
+MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024
+
+
 class LibraryConflictError(Exception):
     def __init__(self, message: str, existing_item) -> None:
         super().__init__(message)
@@ -65,7 +68,11 @@ class LibraryManager:
             abstract=extracted.abstract,
             keywords=extracted.keywords,
         )
-        enriched = PaperMetadataProvider().enrich(local)
+        enriched = (
+            PaperMetadataProvider().enrich(local)
+            if self._settings.enable_online_metadata
+            else local
+        )
 
         return PdfMetadataPreviewResponse(
             title=enriched.title,
@@ -185,6 +192,11 @@ class LibraryManager:
             raise LibraryImportError("Only PDF files can be imported.")
 
         current_position = document.file.tell()
+        document.file.seek(0, 2)
+        size = document.file.tell()
+        if size > MAX_PDF_SIZE_BYTES:
+            document.file.seek(current_position)
+            raise LibraryImportError("PDF files larger than 100 MB cannot be imported.")
         document.file.seek(0)
         signature = document.file.read(5)
         document.file.seek(current_position)

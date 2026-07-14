@@ -34,7 +34,7 @@
         <button
           class={objectTypes.has(type)
             ? 'inline-flex h-7 items-center gap-1.5 rounded-md border border-accent/30 bg-background px-2 text-[0.66rem] font-medium text-foreground'
-            : 'inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-transparent px-2 text-[0.66rem] font-medium text-muted-foreground opacity-55'}
+            : 'inline-flex h-7 items-center gap-1.5 rounded-md border border-border/90 bg-surface/50 px-2 text-[0.66rem] font-medium text-muted-foreground opacity-75'}
           type="button"
           aria-pressed={objectTypes.has(type)}
           onclick={() => onToggleObjectType(type)}
@@ -55,7 +55,7 @@
         <button
           class={relationTypes.has(relation.id)
             ? 'h-7 rounded-md border border-accent/30 bg-background px-2 text-[0.66rem] font-medium text-foreground'
-            : 'h-7 rounded-md border border-border bg-transparent px-2 text-[0.66rem] font-medium text-muted-foreground opacity-55'}
+            : 'h-7 rounded-md border border-border/90 bg-surface/50 px-2 text-[0.66rem] font-medium text-muted-foreground opacity-75'}
           type="button"
           title={relation.description}
           aria-pressed={relationTypes.has(relation.id)}

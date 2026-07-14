@@ -138,7 +138,7 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <div class="depth-control flex h-9 items-center rounded-md border border-border bg-background/80">
+      <div class="depth-control flex h-9 items-center rounded-md border border-border/90 bg-surface-raised/65">
         <button
           class="ros-btn-ghost h-8 w-8 justify-center px-0"
           type="button"
@@ -269,7 +269,7 @@
               height={node.height}
               rx="8"
               class="node-body"
-              fill="hsl(var(--background))"
+              fill="hsl(var(--surface))"
               stroke={meta.colorVar}
               stroke-width={isCurrent ? '2.5' : '1.5'}
               filter={isCurrent ? 'url(#core-glow)' : undefined}
@@ -322,7 +322,7 @@
 
 <style>
   .graph-shell {
-    background: hsl(var(--background) / 0.76);
+    background: hsl(var(--background));
   }
 
   .graph-heading {
@@ -350,14 +350,16 @@
     border: 1px solid hsl(var(--accent) / 0.42);
     border-radius: 7px;
     color: hsl(var(--accent));
-    background: hsl(var(--muted) / 0.18);
+    background: hsl(var(--surface-raised) / 0.72);
   }
 
   .graph-viewport {
     position: relative;
     border-radius: 8px;
-    background: hsl(var(--background) / 0.9);
-    box-shadow: inset 0 0 70px hsl(var(--accent) / 0.018);
+    background: hsl(var(--surface) / 0.72);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--foreground) / 0.04),
+      inset 0 0 70px hsl(var(--accent) / 0.03);
     cursor: grab;
   }
 
@@ -367,7 +369,7 @@
 
   .graph-grid-line {
     fill: none;
-    stroke: hsl(var(--foreground) / 0.035);
+    stroke: hsl(var(--foreground) / 0.055);
     stroke-width: 1;
   }
 
@@ -378,7 +380,7 @@
   }
 
   .circuit-edge {
-    stroke: hsl(var(--border));
+    stroke: hsl(var(--border) / 0.78);
     stroke-width: 1.5;
   }
 
