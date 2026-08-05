@@ -1,4 +1,11 @@
-import { Compass, Home, Library, PanelsTopLeft, Settings } from '@lucide/svelte';
+import {
+  BrainCircuit,
+  Compass,
+  Home,
+  Library,
+  PanelsTopLeft,
+  Settings
+} from '@lucide/svelte';
 
 import type { NavigationGroup, NavigationItem } from '$lib/types/navigation';
 
@@ -10,6 +17,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Home', href: '/', icon: Home },
       { label: 'Workspace', href: '/workspace', icon: PanelsTopLeft },
+      { label: 'Assistant', href: '/assistant', icon: BrainCircuit },
       { label: 'Library', href: '/library', icon: Library },
       { label: 'Map', href: '/connections', icon: Compass }
     ]

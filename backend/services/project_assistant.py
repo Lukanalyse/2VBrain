@@ -163,9 +163,16 @@ class ProjectAssistant:
             excerpt=self._excerpt(record.content),
         )
 
-    def _excerpt(self, content: str, limit: int = 320) -> str:
+    def _excerpt(self, content: str, limit: int = 720) -> str:
         compact = re.sub(r"\s+", " ", content).strip()
-        return compact if len(compact) <= limit else f"{compact[: limit - 3].rstrip()}..."
+        if len(compact) <= limit:
+            return compact
+
+        candidate = compact[:limit].rstrip()
+        sentence_ends = [match.end() for match in re.finditer(r"[.!?](?=\s|$)", candidate)]
+        if sentence_ends and sentence_ends[-1] >= limit // 2:
+            candidate = candidate[: sentence_ends[-1]].rstrip()
+        return f"{candidate}..."
 
     def _refusal(self) -> ProjectAssistantResponse:
         return ProjectAssistantResponse(
@@ -184,6 +191,9 @@ class ProjectAssistant:
             "does not support a reliable answer, set insufficient_evidence to true, set "
             "primary_citation to NONE, and do not guess. Otherwise primary_citation must be the "
             "most important label supporting the answer. Put any other labels in citations. For "
+            "readability, format the answer as concise Markdown. Write inline mathematics with "
+            "$...$ and display equations with $$...$$ using valid LaTeX. Never put equations in "
+            "code fences. Keep source labels outside LaTeX delimiters. "
             'example, write "The result is supported [S1]." with primary_citation "S1". Return '
             "only the requested JSON schema."
         )

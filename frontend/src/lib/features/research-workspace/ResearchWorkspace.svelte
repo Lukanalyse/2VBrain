@@ -1,12 +1,14 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import {
+    ArrowLeft,
     Cpu,
     Eye,
     ExternalLink,
     GripVertical,
     Pencil,
     Plus,
+    Quote,
     Search,
     X
   } from '@lucide/svelte';
@@ -15,6 +17,11 @@
   import { entityMeta, entityTypes } from '$lib/design/entities';
   import ObjectMenu from '$lib/components/ui/ObjectMenu.svelte';
   import TagBadges from '$lib/components/ui/TagBadges.svelte';
+  import { assistantProjectUrl } from '$lib/features/assistant/services/assistantNavigation';
+  import {
+    readCitationFocus,
+    type AssistantCitationFocus
+  } from '$lib/features/assistant/services/assistantSession';
   import type {
     LinkableObject,
     LinkableType
@@ -80,6 +87,7 @@
   let showPreview = $state(false);
   let pdfMessage = $state<string | null>(null);
   let handledRequest = $state<string | null>(null);
+  let citationFocus = $state<AssistantCitationFocus | null>(null);
   let showCreate = $state(false);
   let createKind = $state<CreateKind>('note');
   let createTitle = $state('');
@@ -94,6 +102,44 @@
   const isPaper = $derived(selected?.type === 'paper');
   const relatedItems = $derived(detail?.all_related ?? []);
   const requestedObjectId = $derived($page.url.searchParams.get('open'));
+  const requestedCitationId = $derived($page.url.searchParams.get('citation'));
+  const requestedAssistantProject = $derived(
+    $page.url.searchParams.get('assistantProject')
+  );
+  const requestedSourceKind = $derived(
+    sourceKindFromQuery($page.url.searchParams.get('sourceKind'))
+  );
+  const requestedPage = $derived(
+    pageFromQuery($page.url.searchParams.get('page'))
+  );
+  const requestedObjectKey = $derived(
+    requestedObjectId
+      ? [
+          requestedObjectId,
+          requestedCitationId ?? '',
+          requestedSourceKind ?? '',
+          requestedPage ?? ''
+        ].join('|')
+      : null
+  );
+  const assistantReturnUrl = $derived(
+    requestedAssistantProject
+      ? assistantProjectUrl(requestedAssistantProject)
+      : '/assistant'
+  );
+  const focusedCitation = $derived(
+    citationFocus?.citation.object.id === selected?.id
+      ? (citationFocus?.citation ?? null)
+      : null
+  );
+  const focusedPdfPage = $derived(
+    selected?.id === requestedObjectId && requestedSourceKind === 'pdf'
+      ? (focusedCitation?.page_number ?? requestedPage)
+      : null
+  );
+  const selectedPdfUrl = $derived(
+    selected ? getWorkspacePdfUrl(selected.id, focusedPdfPage) : ''
+  );
   const wordCount = $derived(
     content.trim() ? content.trim().split(/\s+/).length : 0
   );
@@ -154,10 +200,17 @@
   });
 
   $effect(() => {
+    const focusId = requestedCitationId;
+    citationFocus = focusId ? readCitationFocus(focusId) : null;
+  });
+
+  $effect(() => {
     const objectId = requestedObjectId;
-    if (!objectId || handledRequest === objectId) return;
-    handledRequest = objectId;
-    void openRequestedObject(objectId);
+    const requestKey = requestedObjectKey;
+    const sourceKind = requestedSourceKind;
+    if (!objectId || !requestKey || handledRequest === requestKey) return;
+    handledRequest = requestKey;
+    void openRequestedObject(objectId, sourceKind);
   });
 
   async function loadList(q: string, filter: Filter): Promise<void> {
@@ -197,10 +250,19 @@
     }
   }
 
-  async function openRequestedObject(objectId: string): Promise<void> {
+  async function openRequestedObject(
+    objectId: string,
+    sourceKind: 'pdf' | 'markdown' | null
+  ): Promise<void> {
     try {
       const objectDetail = await getExplorerDetail(objectId);
       await openObject(objectDetail.object);
+      if (sourceKind === 'markdown') {
+        viewerTab = 'notes';
+        showPreview = true;
+      } else if (sourceKind === 'pdf') {
+        viewerTab = 'pdf';
+      }
     } catch (error) {
       listError =
         error instanceof Error ? error.message : 'Unable to open this object.';
@@ -291,10 +353,26 @@
       : 'unread';
   }
 
+  function sourceKindFromQuery(
+    value: string | null
+  ): 'pdf' | 'markdown' | null {
+    return value === 'pdf' || value === 'markdown' ? value : null;
+  }
+
+  function pageFromQuery(value: string | null): number | null {
+    if (!value) return null;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
   function openPdfTab(): void {
     if (!selected) return;
     pdfMessage = null;
-    const opened = window.open(getWorkspacePdfUrl(selected.id), '_blank', 'noopener');
+    const opened = window.open(
+      getWorkspacePdfUrl(selected.id),
+      '_blank',
+      'noopener'
+    );
     if (!opened) {
       pdfMessage =
         'Your browser blocked the PDF tab. Allow pop-ups for this site, then retry.';
@@ -355,7 +433,9 @@
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
   }
 
-  function openCreate(kind: CreateKind = selected ? 'note' : 'brainstorm'): void {
+  function openCreate(
+    kind: CreateKind = selected ? 'note' : 'brainstorm'
+  ): void {
     showCreate = true;
     createKind = kind;
     createTitle = '';
@@ -442,19 +522,22 @@
       createBusy = false;
     }
   }
-
 </script>
 
 <section class="workspace-grid h-full overflow-hidden bg-background">
   <!-- LEFT: focused list of objects explicitly kept in active work -->
-  <aside class="workspace-rail flex min-w-0 flex-col border-r border-border/90 bg-surface/90">
+  <aside
+    class="workspace-rail flex min-w-0 flex-col border-r border-border/90 bg-surface/90"
+  >
     <div class="relative border-b border-border p-4">
       <div class="flex items-center gap-3">
         <span class="rail-core" aria-hidden="true">
           <Cpu size={16} />
         </span>
         <span class="min-w-0">
-          <span class="block text-[0.66rem] font-semibold uppercase text-accent">
+          <span
+            class="block text-[0.66rem] font-semibold uppercase text-accent"
+          >
             Workspace module
           </span>
           <span class="mt-0.5 block text-sm font-semibold text-foreground">
@@ -465,9 +548,13 @@
       </div>
 
       {#if showCreate}
-        <div class="quick-create mt-3 border border-accent/35 bg-surface-raised/80 p-3 shadow-panel">
+        <div
+          class="quick-create mt-3 border border-accent/35 bg-surface-raised/80 p-3 shadow-panel"
+        >
           <div class="flex items-center justify-between gap-2">
-            <span class="inline-flex items-center gap-2 text-xs font-semibold uppercase text-accent">
+            <span
+              class="inline-flex items-center gap-2 text-xs font-semibold uppercase text-accent"
+            >
               <Plus size={13} /> New writing
             </span>
             <button
@@ -490,7 +577,9 @@
                   createKind === kind
                     ? `${entityMeta[kind].border} ${entityMeta[kind].tint} text-foreground`
                     : 'border-border/80 bg-surface text-muted-foreground hover:text-foreground',
-                  kind === 'note' && !selected ? 'cursor-not-allowed opacity-40' : ''
+                  kind === 'note' && !selected
+                    ? 'cursor-not-allowed opacity-40'
+                    : ''
                 ]}
                 disabled={kind === 'note' && !selected}
                 aria-pressed={createKind === kind}
@@ -603,7 +692,8 @@
             <li class="workspace-thread-slot">
               <button
                 type="button"
-                draggable={selected?.type === 'project' && item.id !== selected.id}
+                draggable={selected?.type === 'project' &&
+                  item.id !== selected.id}
                 class={[
                   'workspace-thread flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition',
                   selected?.type === 'project' && item.id !== selected.id
@@ -620,8 +710,12 @@
                   <Icon size={14} />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-medium">{item.title}</span>
-                  <span class="mt-0.5 block truncate text-[0.66rem] text-muted-foreground">
+                  <span class="block truncate text-sm font-medium"
+                    >{item.title}</span
+                  >
+                  <span
+                    class="mt-0.5 block truncate text-[0.66rem] text-muted-foreground"
+                  >
                     {entityMeta[item.type].label}{item.subtitle
                       ? ` · ${item.subtitle}`
                       : ''}
@@ -648,12 +742,17 @@
     {#if !selected}
       <div class="flex flex-1 items-center justify-center p-6">
         <div class="flex max-w-sm flex-col items-center text-center">
-          <NeuralCore compact label="Workspace Core" detail="Awaiting active thread" />
+          <NeuralCore
+            compact
+            label="Workspace Core"
+            detail="Awaiting active thread"
+          />
           <h2 class="-mt-4 text-lg font-semibold text-foreground">
             Select an active thread
           </h2>
           <p class="mt-2 text-sm leading-6 text-muted-foreground">
-            Reading and writing happen here. The complete index stays in Library.
+            Reading and writing happen here. The complete index stays in
+            Library.
           </p>
           <button
             type="button"
@@ -666,7 +765,9 @@
       </div>
     {:else}
       {@const Icon = entityMeta[selected.type].icon}
-      <header class="workspace-document-header flex items-center gap-3 border-b border-border/90 bg-surface/60 px-5 py-3 shadow-panel">
+      <header
+        class="workspace-document-header flex items-center gap-3 border-b border-border/90 bg-surface/60 px-5 py-3 shadow-panel"
+      >
         <span class={`document-node ${entityMeta[selected.type].text}`}>
           <Icon size={17} />
         </span>
@@ -677,7 +778,9 @@
             >
               {entityMeta[selected.type].label}
             </span>
-            <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span
+              class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
               <span
                 class={saveState === 'error'
                   ? 'h-1.5 w-1.5 bg-entity-review'
@@ -740,7 +843,9 @@
       </header>
 
       {#if isPaper}
-        <div class="flex items-center gap-1 border-b border-border/90 bg-surface/60 px-3 py-1.5">
+        <div
+          class="flex items-center gap-1 border-b border-border/90 bg-surface/60 px-3 py-1.5"
+        >
           <button
             type="button"
             class={[
@@ -768,8 +873,52 @@
         </div>
       {/if}
 
+      {#if focusedCitation}
+        <div
+          class="border-b border-accent/25 bg-accent/[0.055] px-4 py-3"
+          aria-label="Assistant cited passage"
+        >
+          <div class="flex flex-wrap items-start gap-3">
+            <span
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-accent/35 bg-accent/10 text-accent"
+            >
+              <Quote size={14} />
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span
+                  class="text-[0.68rem] font-semibold uppercase text-accent"
+                >
+                  Assistant source
+                </span>
+                <span class="text-xs text-muted-foreground">
+                  {focusedCitation.source_title}
+                  {#if focusedCitation.page_number}
+                    · Page {focusedCitation.page_number}
+                  {/if}
+                  {#if focusedCitation.heading !== `Page ${focusedCitation.page_number}`}
+                    · {focusedCitation.heading}
+                  {/if}
+                </span>
+              </div>
+              <p class="mt-1.5 text-sm leading-6 text-foreground/90">
+                {focusedCitation.excerpt}
+              </p>
+            </div>
+            <a
+              href={assistantReturnUrl}
+              class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground transition hover:border-accent/40 hover:text-foreground"
+            >
+              <ArrowLeft size={13} /> Back to conversation
+            </a>
+          </div>
+        </div>
+      {/if}
+
       {#if pdfMessage}
-        <div class="border-b border-border bg-muted/[0.08] px-5 py-2 text-xs text-muted-foreground">
+        <div
+          class="border-b border-border bg-muted/[0.08] px-5 py-2 text-xs text-muted-foreground"
+        >
           {pdfMessage}
         </div>
       {/if}
@@ -778,17 +927,23 @@
         {#if detailLoading}
           <p class="p-5 text-sm text-muted-foreground">Loading...</p>
         {:else if isPaper && viewerTab === 'pdf'}
-          <iframe
-            title={selected.title}
-            src={getWorkspacePdfUrl(selected.id)}
-            class="min-h-0 flex-1 border-0 bg-muted/10"
-          ></iframe>
+          {#key selectedPdfUrl}
+            <iframe
+              title={selected.title}
+              src={selectedPdfUrl}
+              class="min-h-0 flex-1 border-0 bg-muted/10"
+            ></iframe>
+          {/key}
         {:else if projectContext}
           <ProjectDashboard context={projectContext} />
         {:else if editorContext}
           <!-- Markdown editor / preview (notes, ideas, projects, concepts) -->
-          <div class="flex items-center justify-between border-b border-border/90 bg-surface/50 px-5 py-1.5">
-            <span class="inline-flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+          <div
+            class="flex items-center justify-between border-b border-border/90 bg-surface/50 px-5 py-1.5"
+          >
+            <span
+              class="inline-flex min-w-0 items-center gap-3 text-xs text-muted-foreground"
+            >
               <span class="inline-flex items-center gap-2">
                 <Cpu size={12} class="text-accent" />
                 Writing surface
@@ -813,15 +968,19 @@
           {#if showPreview}
             <div class="min-h-0 flex-1 overflow-y-auto">
               <MarkdownPreview
-                content={content}
+                {content}
                 objectTitle={selected.title}
                 compact
                 showMetadata={false}
               />
             </div>
           {:else}
-            <div class="writing-stage min-h-0 flex-1 overflow-hidden p-3 sm:p-5">
-              <div class="mx-auto h-full max-w-5xl overflow-hidden border-x border-border/80 bg-surface/35 shadow-panel">
+            <div
+              class="writing-stage min-h-0 flex-1 overflow-hidden p-3 sm:p-5"
+            >
+              <div
+                class="mx-auto h-full max-w-5xl overflow-hidden border-x border-border/80 bg-surface/35 shadow-panel"
+              >
                 {#key selected.id}
                   <MarkdownPanel
                     context={editorContext}
@@ -865,6 +1024,7 @@
     position: relative;
     display: grid;
     grid-template-columns: clamp(260px, 26vw, 360px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     background-image:
       linear-gradient(hsl(var(--foreground) / 0.04) 1px, transparent 1px),
       linear-gradient(90deg, hsl(var(--foreground) / 0.04) 1px, transparent 1px);
@@ -1003,7 +1163,12 @@
 
   .writing-stage {
     background:
-      linear-gradient(90deg, transparent 0, hsl(var(--accent) / 0.035) 50%, transparent 100%),
+      linear-gradient(
+        90deg,
+        transparent 0,
+        hsl(var(--accent) / 0.035) 50%,
+        transparent 100%
+      ),
       hsl(var(--background) / 0.88);
   }
 

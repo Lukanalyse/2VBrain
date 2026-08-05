@@ -7,9 +7,18 @@
     LoaderCircle,
     RefreshCw,
     Save,
-    Send
+    Send,
+    Trash2
   } from '@lucide/svelte';
+  import { untrack } from 'svelte';
 
+  import AssistantAnswer from '$lib/features/assistant/components/AssistantAnswer.svelte';
+  import {
+    clearAssistantConversation,
+    readAssistantConversation,
+    writeAssistantConversation,
+    type AssistantChatMessage
+  } from '$lib/features/assistant/services/assistantSession';
   import {
     getAssistantStatus,
     getProjectIndex,
@@ -30,17 +39,9 @@
 
   type Props = {
     project: LinkableObject;
-    openObject: (object: LinkableObject) => Promise<void>;
+    openCitation: (citation: AssistantCitation) => Promise<void>;
     refreshProject: () => Promise<void>;
-  };
-
-  type ChatMessage = {
-    id: number;
-    role: 'user' | 'assistant';
-    content: string;
-    question?: string;
-    citations: AssistantCitation[];
-    saved?: boolean;
+    variant?: 'embedded' | 'workspace';
   };
 
   const suggestions = [
@@ -49,10 +50,15 @@
     'Quelles informations importantes manquent encore ?'
   ];
 
-  let { project, openObject, refreshProject }: Props = $props();
+  let {
+    project,
+    openCitation,
+    refreshProject,
+    variant = 'embedded'
+  }: Props = $props();
   let status = $state<AssistantStatus | null>(null);
   let indexStatus = $state<ProjectIndexStatus | null>(null);
-  let messages = $state<ChatMessage[]>([]);
+  let messages = $state<AssistantChatMessage[]>([]);
   let question = $state('');
   let loading = $state(true);
   let indexing = $state(false);
@@ -60,15 +66,31 @@
   let savingMessageId = $state<number | null>(null);
   let error = $state<string | null>(null);
   let messageId = 0;
+  let activeProjectId = $state('');
 
   let ready = $derived(Boolean(status?.available && indexStatus?.ready));
 
   $effect(() => {
     const projectId = project.id;
-    messages = [];
-    question = '';
-    error = null;
-    void load(projectId);
+    untrack(() => {
+      const restoredMessages = readAssistantConversation(projectId);
+      activeProjectId = projectId;
+      messages = restoredMessages;
+      messageId = restoredMessages.reduce(
+        (maximum, message) => Math.max(maximum, message.id),
+        0
+      );
+      question = '';
+      error = null;
+      void load(projectId);
+    });
+  });
+
+  $effect(() => {
+    const projectId = activeProjectId;
+    const conversation = messages;
+    if (!projectId) return;
+    writeAssistantConversation(projectId, conversation);
   });
 
   async function load(projectId = project.id): Promise<void> {
@@ -82,6 +104,9 @@
       if (project.id !== projectId) return;
       status = nextStatus;
       indexStatus = nextIndex;
+      if (nextStatus.available && !nextIndex.ready) {
+        void prepareProject(projectId);
+      }
     } catch (loadError) {
       if (project.id !== projectId) return;
       error =
@@ -93,12 +118,13 @@
     }
   }
 
-  async function prepareProject(): Promise<void> {
+  async function prepareProject(projectId = project.id): Promise<void> {
     if (indexing || !status?.available) return;
     indexing = true;
     error = null;
     try {
-      indexStatus = await indexProject(project.id);
+      const nextIndex = await indexProject(projectId);
+      if (project.id === projectId) indexStatus = nextIndex;
     } catch (indexError) {
       error =
         indexError instanceof Error
@@ -148,7 +174,7 @@
     }
   }
 
-  async function saveAnswer(message: ChatMessage): Promise<void> {
+  async function saveAnswer(message: AssistantChatMessage): Promise<void> {
     if (
       message.role !== 'assistant' ||
       message.saved ||
@@ -193,10 +219,20 @@
     event.preventDefault();
     void ask();
   }
+
+  function clearConversation(): void {
+    clearAssistantConversation(project.id);
+    messages = [];
+    messageId = 0;
+    question = '';
+    error = null;
+  }
 </script>
 
 <section
-  class="border-b border-border bg-surface/45"
+  class={variant === 'workspace'
+    ? 'flex h-full min-h-0 flex-col bg-surface/25'
+    : 'border-b border-border bg-surface/45'}
   aria-label="Project research assistant"
 >
   <header
@@ -216,6 +252,18 @@
       </div>
     </div>
     <div class="flex items-center gap-2">
+      {#if messages.length}
+        <button
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:text-foreground"
+          aria-label="Clear conversation"
+          title="Clear conversation"
+          disabled={answering || savingMessageId !== null}
+          onclick={clearConversation}
+        >
+          <Trash2 size={14} />
+        </button>
+      {/if}
       <span
         class="inline-flex h-7 items-center gap-1.5 rounded-md border border-accent/30 bg-accent/[0.07] px-2 text-[0.68rem] font-medium text-accent"
       >
@@ -235,13 +283,17 @@
   </header>
 
   <div
-    class="grid min-h-[390px] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1.4fr)_minmax(250px,0.6fr)]"
+    class={variant === 'workspace'
+      ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_280px]'
+      : 'grid min-h-[390px] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1.4fr)_minmax(250px,0.6fr)]'}
   >
     <div
       class="flex min-h-0 flex-col border-b border-border/80 lg:border-b-0 lg:border-r"
     >
       <div
-        class="max-h-[390px] min-h-64 flex-1 overflow-y-auto px-6 py-4"
+        class={variant === 'workspace'
+          ? 'min-h-64 flex-1 overflow-y-auto px-5 py-5 sm:px-8'
+          : 'max-h-[390px] min-h-64 flex-1 overflow-y-auto px-6 py-4'}
         aria-live="polite"
       >
         {#if loading}
@@ -277,7 +329,7 @@
               type="button"
               class="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-xs font-semibold text-accent-foreground disabled:opacity-50"
               disabled={indexing}
-              onclick={prepareProject}
+              onclick={() => prepareProject()}
             >
               {#if indexing}
                 <LoaderCircle size={14} class="animate-spin" /> Indexing
@@ -309,13 +361,17 @@
                 <p class="text-[0.65rem] uppercase text-muted-foreground">
                   {message.role === 'user' ? 'You' : 'Assistant'}
                 </p>
-                <p
-                  class={message.role === 'user'
-                    ? 'mt-1 whitespace-pre-wrap rounded-md bg-muted/55 px-3 py-2 text-sm leading-6 text-foreground'
-                    : 'mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground'}
-                >
-                  {message.content}
-                </p>
+                {#if message.role === 'user'}
+                  <p
+                    class="mt-1 whitespace-pre-wrap rounded-md bg-muted/55 px-3 py-2 text-sm leading-6 text-foreground"
+                  >
+                    {message.content}
+                  </p>
+                {:else}
+                  <div class="mt-1">
+                    <AssistantAnswer content={message.content} />
+                  </div>
+                {/if}
                 {#if message.role === 'assistant'}
                   <div class="mt-2 flex flex-wrap items-center gap-1.5">
                     {#each message.citations as citation}
@@ -323,7 +379,7 @@
                         type="button"
                         class="inline-flex h-7 max-w-56 items-center gap-1.5 rounded-md border border-border bg-background/55 px-2 text-[0.68rem] text-muted-foreground transition hover:border-accent/40 hover:text-foreground"
                         title={citation.excerpt}
-                        onclick={() => openObject(citation.object)}
+                        onclick={() => openCitation(citation)}
                       >
                         <span class="font-semibold text-accent"
                           >{citation.label}</span
@@ -399,7 +455,11 @@
       </div>
     </div>
 
-    <aside class="max-h-[470px] overflow-y-auto px-4 py-4">
+    <aside
+      class={variant === 'workspace'
+        ? 'overflow-y-auto border-t border-border/80 px-4 py-4 lg:border-t-0'
+        : 'max-h-[470px] overflow-y-auto px-4 py-4'}
+    >
       <p class="text-[0.68rem] font-medium uppercase text-muted-foreground">
         Local index
       </p>

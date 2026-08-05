@@ -8,7 +8,7 @@ from core.settings import Settings
 from database.base import Base
 from repositories.assistant_repository import AssistantRepository
 from repositories.library_repository import LibraryRepository
-from schemas.assistant import GroundedAnswerPayload, ProjectAssistantQuery
+from schemas.assistant import AssistantConfigUpdate, GroundedAnswerPayload, ProjectAssistantQuery
 from services.assistant_config_manager import (
     AssistantConfigError,
     AssistantConfigManager,
@@ -69,6 +69,33 @@ class CapturingOllama(OllamaClient):
                 "content": (
                     '{"answer":"Supported [S2].","primary_citation":"S2",'
                     '"citations":["S2"],"insufficient_evidence":false}'
+                )
+            }
+        }
+
+
+class RetryingOllama(OllamaClient):
+    def __init__(self) -> None:
+        super().__init__("http://127.0.0.1:11434")
+        self.payloads: list[dict[str, object]] = []
+
+    def _request(
+        self,
+        path: str,
+        payload: dict[str, object] | None = None,
+        *,
+        timeout: int,
+    ) -> dict[str, object]:
+        del path, timeout
+        assert payload is not None
+        self.payloads.append(payload)
+        if len(self.payloads) == 1:
+            return {"message": {"content": '{"unexpected":"shape"}'}}
+        return {
+            "message": {
+                "content": (
+                    '{"answer":"Supported [S1].","primary_citation":"S1",'
+                    '"citations":["S1"],"insufficient_evidence":false}'
                 )
             }
         }
@@ -246,6 +273,34 @@ def test_assistant_normalizes_known_declared_citations(tmp_path: Path) -> None:
     assert [citation.label for citation in response.citations] == ["S1"]
 
 
+def test_citation_excerpt_preserves_a_complete_long_passage(tmp_path: Path) -> None:
+    assistant, _, _, _, _, _ = make_assistant(tmp_path)
+    content = " ".join(
+        [
+            "The opening identifies the paper and its authors.",
+            "The central result explains how exploration and exploitation are balanced.",
+            *("Supporting evidence remains inside this cited passage." for _ in range(20)),
+        ]
+    )
+
+    excerpt = assistant._excerpt(content)
+
+    assert len(excerpt) > 320
+    assert len(excerpt) <= 723
+    assert excerpt.endswith("...")
+    assert "central result" in excerpt
+
+
+def test_system_prompt_requests_markdown_latex_with_citations_outside_math(tmp_path: Path) -> None:
+    assistant, _, _, _, _, _ = make_assistant(tmp_path)
+
+    prompt = assistant._system_prompt()
+
+    assert "$...$" in prompt
+    assert "$$...$$" in prompt
+    assert "source labels outside LaTeX delimiters" in prompt
+
+
 def test_assistant_rejects_invented_citation(tmp_path: Path) -> None:
     assistant, _, _, _, _, _ = make_assistant(tmp_path, citation="S999")
 
@@ -282,6 +337,20 @@ def test_cloud_models_are_rejected(tmp_path: Path) -> None:
         AssistantConfigManager(settings).read()
 
 
+def test_unapproved_local_chat_models_are_rejected(tmp_path: Path) -> None:
+    settings = Settings(assistant_config_path=tmp_path / "assistant.json")
+    manager = AssistantConfigManager(settings)
+
+    with pytest.raises(AssistantConfigError, match="Research model must be"):
+        manager.save(
+            AssistantConfigUpdate(
+                chat_model="qwen3:8b",
+                embedding_model="embeddinggemma",
+                context_length=8192,
+            )
+        )
+
+
 def test_ollama_schema_constrains_citations_to_retrieved_labels() -> None:
     ollama = CapturingOllama()
 
@@ -307,3 +376,45 @@ def test_ollama_schema_constrains_citations_to_retrieved_labels() -> None:
     items = citation_schema["items"]
     assert isinstance(items, dict)
     assert items["enum"] == ["S1", "S2"]
+
+
+def test_qwen35_uses_explicit_json_contract() -> None:
+    ollama = CapturingOllama()
+
+    response = ollama.grounded_answer(
+        model="qwen3.5:4b",
+        context_length=8192,
+        messages=[
+            {"role": "system", "content": "Project evidence only."},
+            {"role": "user", "content": "Question"},
+        ],
+        allowed_citations=["S1", "S2"],
+    )
+
+    assert response.primary_citation == "S2"
+    assert ollama.payload is not None
+    assert ollama.payload["format"] == "json"
+    messages = ollama.payload["messages"]
+    assert isinstance(messages, list)
+    system_message = messages[0]
+    assert isinstance(system_message, dict)
+    assert '"primary_citation"' in system_message["content"]
+    assert "Allowed citation labels are: S1, S2" in system_message["content"]
+
+
+def test_qwen35_retries_one_invalid_json_response() -> None:
+    ollama = RetryingOllama()
+
+    response = ollama.grounded_answer(
+        model="qwen3.5:4b",
+        context_length=8192,
+        messages=[{"role": "user", "content": "Question"}],
+        allowed_citations=["S1"],
+    )
+
+    assert response.primary_citation == "S1"
+    assert len(ollama.payloads) == 2
+    retry_messages = ollama.payloads[1]["messages"]
+    assert isinstance(retry_messages, list)
+    assert retry_messages[-1]["role"] == "user"
+    assert "previous response violated" in retry_messages[-1]["content"]

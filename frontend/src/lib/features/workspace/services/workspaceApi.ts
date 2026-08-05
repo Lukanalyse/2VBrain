@@ -209,8 +209,13 @@ export function deleteWorkspaceNote(
   );
 }
 
-export function getWorkspacePdfUrl(objectId: string): string {
-  return `${API_BASE_URL}/workspace/objects/${encodeURIComponent(objectId)}/pdf`;
+export function getWorkspacePdfUrl(
+  objectId: string,
+  pageNumber?: number | null
+): string {
+  const url = `${API_BASE_URL}/workspace/objects/${encodeURIComponent(objectId)}/pdf`;
+  if (!pageNumber) return url;
+  return `${url}#page=${Math.max(1, Math.floor(pageNumber))}`;
 }
 
 export function openWorkspacePdf(

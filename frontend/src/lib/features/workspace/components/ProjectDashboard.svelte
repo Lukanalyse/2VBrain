@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import {
     BookOpen,
     Boxes,
@@ -19,6 +20,8 @@
 
   import { entityMeta } from '$lib/design/entities';
   import ProjectAssistantPanel from '$lib/features/assistant/components/ProjectAssistantPanel.svelte';
+  import { citationWorkspaceUrl } from '$lib/features/assistant/services/assistantNavigation';
+  import type { AssistantCitation } from '$lib/features/assistant/types/assistant';
   import { createConcept } from '$lib/features/concepts/services/conceptsApi';
   import { createLinks } from '$lib/features/linking/services/linkingApi';
   import type {
@@ -70,7 +73,7 @@
 
   let { context }: Props = $props();
   let noteMode = $state<'reading' | 'editing'>('reading');
-  let assistantOpen = $state(false);
+  let assistantOpen = $state(true);
   let projectNotes = $state<ProjectNotePreview[]>([]);
   let intakeOpen = $state(false);
   let intakeMode = $state<IntakeMode>('existing');
@@ -311,6 +314,12 @@
     });
   }
 
+  async function openAssistantCitation(
+    citation: AssistantCitation
+  ): Promise<void> {
+    await goto(citationWorkspaceUrl(context.object.id, citation));
+  }
+
   let papers = $derived(entries('paper'));
   let continueReading = $derived(
     papers.filter((entry) => hasRole(entry, ['Reading'])).slice(0, 4)
@@ -382,7 +391,8 @@
           aria-expanded={assistantOpen}
           onclick={() => (assistantOpen = !assistantOpen)}
         >
-          <Sparkles size={13} /> Assistant
+          <Sparkles size={13} />
+          {assistantOpen ? 'Hide assistant' : 'Ask project'}
         </button>
         <button
           type="button"
@@ -417,7 +427,7 @@
   {#if assistantOpen}
     <ProjectAssistantPanel
       project={context.object}
-      openObject={context.openObject}
+      openCitation={openAssistantCitation}
       refreshProject={context.refreshObject}
     />
   {/if}

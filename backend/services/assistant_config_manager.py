@@ -9,6 +9,9 @@ class AssistantConfigError(Exception):
     pass
 
 
+ALLOWED_CHAT_MODELS = frozenset({"qwen3:14b", "qwen3.5:4b"})
+
+
 class AssistantConfigManager:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -19,7 +22,7 @@ class AssistantConfigManager:
         chat_model = str(data.get("chat_model") or self._settings.ollama_chat_model)
         embedding_model = str(data.get("embedding_model") or self._settings.ollama_embedding_model)
         context_length = int(data.get("context_length") or self._settings.ollama_context_length)
-        self._validate_local_model(chat_model)
+        self._validate_chat_model(chat_model)
         self._validate_local_model(embedding_model)
         return AssistantConfigResponse(
             base_url=self._local_base_url(),
@@ -29,7 +32,7 @@ class AssistantConfigManager:
         )
 
     def save(self, update: AssistantConfigUpdate) -> AssistantConfigResponse:
-        self._validate_local_model(update.chat_model)
+        self._validate_chat_model(update.chat_model)
         self._validate_local_model(update.embedding_model)
         payload = {
             "chat_model": update.chat_model.strip(),
@@ -73,3 +76,10 @@ class AssistantConfigManager:
             raise AssistantConfigError("An Ollama model name is required.")
         if "cloud" in value:
             raise AssistantConfigError("Cloud-hosted Ollama models are disabled in Research OS.")
+
+    def _validate_chat_model(self, model: str) -> None:
+        self._validate_local_model(model)
+        value = model.strip().lower()
+        if value not in ALLOWED_CHAT_MODELS:
+            choices = " or ".join(sorted(ALLOWED_CHAT_MODELS))
+            raise AssistantConfigError(f"Research model must be {choices}.")

@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     ArrowRight,
+    BrainCircuit,
     Library,
     Network,
     PanelsTopLeft
@@ -16,7 +17,7 @@
     type HomeSummary
   } from '$lib/features/workspace/services/workspaceApi';
 
-  type ModuleId = 'workspace' | 'library' | 'map';
+  type ModuleId = 'workspace' | 'assistant' | 'library' | 'map';
   type HubModule = {
     id: ModuleId;
     label: string;
@@ -63,6 +64,17 @@
       href: '/workspace',
       metric: `${allActive.length} active`,
       icon: PanelsTopLeft
+    },
+    {
+      id: 'assistant',
+      label: 'Assistant',
+      role: 'Local intelligence',
+      href:
+        primaryContinue?.type === 'project'
+          ? `/assistant?project=${encodeURIComponent(primaryContinue.id)}`
+          : '/assistant',
+      metric: `${projectCount} projects`,
+      icon: BrainCircuit
     },
     {
       id: 'library',
@@ -116,11 +128,13 @@
       <p class="hub-kicker">Cognitive operating system</p>
       <h1 id="hub-title">Research OS</h1>
     </div>
-    <p>One core. Three dedicated spaces.</p>
+    <p>One core. Four dedicated spaces.</p>
   </header>
 
   <div class="hub-stage">
     <svg class="hub-circuits" viewBox="0 0 1120 560" aria-hidden="true">
+      <path class:wire-active={activeModule === 'assistant'} d="M 560 218 V 92"
+      ></path>
       <path
         class:wire-active={activeModule === 'workspace'}
         d="M 467 250 H 410 L 355 190 H 258 L 220 152 H 132"
@@ -138,6 +152,7 @@
         d="M 653 310 H 715 L 772 400 H 870 L 902 442 H 988"
       ></path>
       <circle cx="132" cy="152" r="5"></circle>
+      <circle cx="560" cy="92" r="5"></circle>
       <circle cx="988" cy="152" r="5"></circle>
       <circle cx="132" cy="442" r="5"></circle>
       <circle cx="988" cy="442" r="5"></circle>
@@ -246,7 +261,11 @@
     pointer-events: none;
     background-image:
       linear-gradient(hsl(var(--foreground) / 0.052) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.052) 1px, transparent 1px);
+      linear-gradient(
+        90deg,
+        hsl(var(--foreground) / 0.052) 1px,
+        transparent 1px
+      );
     background-size: 32px 32px;
     mask-image: linear-gradient(to bottom, black, transparent 82%);
   }
@@ -259,7 +278,16 @@
     height: min(42vw, 470px);
     transform: translate(-50%, -50%);
     border: 1px solid hsl(var(--accent) / 0.17);
-    clip-path: polygon(12% 0, 88% 0, 100% 28%, 100% 72%, 88% 100%, 12% 100%, 0 72%, 0 28%);
+    clip-path: polygon(
+      12% 0,
+      88% 0,
+      100% 28%,
+      100% 72%,
+      88% 100%,
+      12% 100%,
+      0 72%,
+      0 28%
+    );
     box-shadow:
       inset 0 0 90px hsl(var(--accent) / 0.055),
       0 0 80px hsl(var(--accent) / 0.045);
@@ -442,6 +470,12 @@
     top: 14%;
   }
 
+  .hub-module--assistant {
+    left: 50%;
+    top: 1%;
+    transform: translateX(-50%);
+  }
+
   .hub-module--library {
     right: 0;
     top: 14%;
@@ -464,6 +498,13 @@
 
   .hub-module--workspace .module-terminal {
     right: -13px;
+  }
+
+  .hub-module--assistant .module-terminal {
+    top: auto;
+    bottom: -13px;
+    left: 50%;
+    transform: translateX(-50%);
   }
 
   .hub-module--library .module-terminal,
@@ -566,7 +607,9 @@
   }
 
   @keyframes circuit-flow {
-    to { stroke-dashoffset: -24; }
+    to {
+      stroke-dashoffset: -24;
+    }
   }
 
   @media (max-width: 840px) {
@@ -619,12 +662,16 @@
 
     .hub-module {
       min-height: 62px;
-      order: 2;
+      order: 3;
+    }
+
+    .hub-module--assistant {
+      order: 1;
     }
 
     .resume-node {
       min-height: 62px;
-      order: 1;
+      order: 2;
     }
 
     .hub-module:hover,

@@ -121,7 +121,7 @@
   </main>
 
   <nav
-    class="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-4 border-t border-border/90 bg-surface/95 px-2 shadow-[0_-8px_24px_hsl(0_0%_0%/0.22)] backdrop-blur md:hidden"
+    class="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-5 border-t border-border/90 bg-surface/95 px-1 shadow-[0_-8px_24px_hsl(0_0%_0%/0.22)] backdrop-blur md:hidden"
     aria-label="Primary navigation"
   >
     {#each primaryItems as item}

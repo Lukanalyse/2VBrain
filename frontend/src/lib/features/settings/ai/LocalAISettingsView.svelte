@@ -18,6 +18,17 @@
   import type { AssistantStatus } from '$lib/features/assistant/types/assistant';
   import SettingsTabs from '$lib/features/settings/components/SettingsTabs.svelte';
 
+  type ResearchModelChoice = {
+    id: 'qwen3:14b' | 'qwen3.5:4b';
+    label: string;
+    recommendedContext: number;
+  };
+
+  const researchModels: ResearchModelChoice[] = [
+    { id: 'qwen3:14b', label: 'Quality', recommendedContext: 16384 },
+    { id: 'qwen3.5:4b', label: 'Efficient', recommendedContext: 8192 }
+  ];
+
   let status = $state<AssistantStatus | null>(null);
   let chatModel = $state('qwen3:14b');
   let embeddingModel = $state('embeddinggemma');
@@ -37,6 +48,7 @@
       model.name.toLowerCase().includes('embed')
     ) ?? []
   );
+  let selectedChatModel = $derived(installedChatModel(chatModel));
 
   function modelMatches(installed: string, configured: string): boolean {
     return (
@@ -44,6 +56,21 @@
       installed === `${configured}:latest` ||
       configured === `${installed}:latest`
     );
+  }
+
+  function installedChatModel(modelName: string) {
+    return chatModels.find((model) => modelMatches(model.name, modelName));
+  }
+
+  function selectResearchModel(choice: ResearchModelChoice): void {
+    if (!installedChatModel(choice.id)) return;
+    chatModel = choice.id;
+    contextLength = choice.recommendedContext;
+  }
+
+  function formatModelSize(size: number | null): string {
+    if (!size) return '';
+    return `${(size / 1_000_000_000).toFixed(1)} GB`;
   }
 
   onMount(() => void loadStatus());
@@ -148,28 +175,61 @@
       {/if}
     </Card>
 
-    <div class="grid gap-4 lg:grid-cols-2">
+    <div
+      class="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]"
+    >
       <Card className="p-5">
-        <label class="text-sm font-semibold text-foreground" for="chat-model">
-          Research model
-        </label>
-        <input
-          id="chat-model"
-          list="chat-models"
-          bind:value={chatModel}
-          class="mt-3 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent/55"
-        />
-        <datalist id="chat-models">
-          {#each chatModels as model}
-            <option value={model.name}
-              >{model.parameter_size ?? model.name}</option
+        <p class="text-sm font-semibold text-foreground">Research model</p>
+        <div
+          class="mt-3 grid gap-2 sm:grid-cols-2"
+          role="radiogroup"
+          aria-label="Research model"
+        >
+          {#each researchModels as model}
+            {@const installed = installedChatModel(model.id)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={chatModel === model.id}
+              disabled={!installed}
+              class={[
+                'flex min-h-24 min-w-0 flex-col justify-between rounded-md border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45',
+                chatModel === model.id
+                  ? 'border-accent/60 bg-accent/10 text-foreground'
+                  : 'border-border bg-background/55 text-muted-foreground hover:border-accent/35 hover:text-foreground'
+              ]}
+              onclick={() => selectResearchModel(model)}
             >
+              <span
+                class="flex w-full min-w-0 items-start justify-between gap-2"
+              >
+                <span class="min-w-0">
+                  <span
+                    class="block text-xs font-semibold uppercase text-accent"
+                  >
+                    {model.label}
+                  </span>
+                  <span class="mt-1 block truncate text-sm font-medium">
+                    {model.id}
+                  </span>
+                </span>
+                {#if chatModel === model.id}
+                  <CheckCircle2 size={16} class="shrink-0 text-accent" />
+                {/if}
+              </span>
+              <span class="mt-3 text-xs text-muted-foreground">
+                {#if installed}
+                  {installed.parameter_size ?? 'Installed'}
+                  {#if formatModelSize(installed.size)}
+                    · {formatModelSize(installed.size)}
+                  {/if}
+                {:else}
+                  Not installed
+                {/if}
+              </span>
+            </button>
           {/each}
-        </datalist>
-        <p class="mt-2 text-xs text-muted-foreground">
-          {chatModels.find((model) => modelMatches(model.name, chatModel))
-            ?.parameter_size ?? 'Model must be installed in Ollama.'}
-        </p>
+        </div>
       </Card>
 
       <Card className="p-5">
@@ -224,7 +284,7 @@
         <button
           type="button"
           class="inline-flex h-10 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-accent-foreground disabled:opacity-50"
-          disabled={saving || !chatModel.trim() || !embeddingModel.trim()}
+          disabled={saving || !selectedChatModel || !embeddingModel.trim()}
           onclick={save}
         >
           {#if saving}
