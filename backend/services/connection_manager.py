@@ -98,6 +98,7 @@ class ConnectionManager:
         if next_content == content:
             raise ConnectionManagerError("Connection not found.")
         path.write_text(next_content, encoding="utf-8")
+        self._linking_engine.invalidate_path(path)
 
     def graph_data(self) -> ConnectionGraphResponse:
         objects = self._linking_engine.search("")

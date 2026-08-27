@@ -88,6 +88,7 @@
   let createTitle = $state('');
   let dropActive = $state(false);
   let intakeSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  let intakeSearchRequest = 0;
   let papersSection = $state<HTMLElement | null>(null);
   let notesSection = $state<HTMLElement | null>(null);
   let graphSection = $state<HTMLElement | null>(null);
@@ -152,14 +153,25 @@
 
   function scheduleIntakeSearch(): void {
     if (intakeSearchTimer) clearTimeout(intakeSearchTimer);
-    intakeSearchTimer = setTimeout(() => void loadIntakeResults(), 140);
+    const request = ++intakeSearchRequest;
+    const query = intakeQuery;
+    const filter = intakeFilter;
+    intakeSearchTimer = setTimeout(
+      () => void loadIntakeResults(request, query, filter),
+      170
+    );
   }
 
-  async function loadIntakeResults(): Promise<void> {
+  async function loadIntakeResults(
+    request = ++intakeSearchRequest,
+    query = intakeQuery,
+    filter = intakeFilter
+  ): Promise<void> {
     intakeSearching = true;
     intakeError = null;
     try {
-      const results = await context.searchObjects(intakeQuery);
+      const results = await context.searchObjects(query);
+      if (request !== intakeSearchRequest) return;
       const attached = new Set(
         (context.detail?.all_related ?? []).map((item) => item.id)
       );
@@ -168,7 +180,7 @@
           item.id !== context.object.id &&
           item.type !== 'project' &&
           !attached.has(item.id) &&
-          (intakeFilter === 'all' || item.type === intakeFilter)
+          (filter === 'all' || item.type === filter)
       );
     } catch (error) {
       intakeResults = [];
@@ -177,7 +189,7 @@
           ? error.message
           : 'Unable to load project material.';
     } finally {
-      intakeSearching = false;
+      if (request === intakeSearchRequest) intakeSearching = false;
     }
   }
 
@@ -348,6 +360,7 @@
     scheduleIntakeSearch();
     return () => {
       if (intakeSearchTimer) clearTimeout(intakeSearchTimer);
+      intakeSearchRequest += 1;
     };
   });
 

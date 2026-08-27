@@ -27,13 +27,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function searchLinkableObjects(
   query = '',
-  types: LinkableType[] = []
+  types: LinkableType[] = [],
+  signal?: AbortSignal
 ): Promise<LinkableObject[]> {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   for (const type of types) params.append('types', type);
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  const response = await request<LinkSearchResponse>(`/links/search${suffix}`);
+  const response = await request<LinkSearchResponse>(`/links/search${suffix}`, {
+    signal
+  });
   return response.objects;
 }
 

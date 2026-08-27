@@ -10,7 +10,7 @@
     StickyNote,
     BookOpenText
   } from '@lucide/svelte';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import Card from '$lib/components/ui/Card.svelte';
   import PageHeader from '$lib/components/ui/PageHeader.svelte';
@@ -35,6 +35,9 @@
   let errorMessage: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let hasMounted = false;
+  let searchController: AbortController | null = null;
+  let detailController: AbortController | null = null;
+  let visibleLimit = 120;
 
   const types: LinkableType[] = [
     'paper',
@@ -62,29 +65,46 @@
   };
 
   $: if (hasMounted) scheduleSearch(query);
+  $: visibleResults = results.slice(0, visibleLimit);
   $: grouped = types.map((type) => ({
     type,
-    items: results.filter((item) => item.type === type)
+    items: visibleResults.filter((item) => item.type === type)
   }));
+  $: hiddenResultCount = Math.max(0, results.length - visibleResults.length);
 
   onMount(async () => {
     hasMounted = true;
-    results = await searchExplorer('');
-    if (results[0]) await selectObject(results[0], true);
-    isLoading = false;
+    try {
+      results = await searchExplorer('');
+      if (results[0]) await selectObject(results[0], true);
+    } catch (error) {
+      errorMessage =
+        error instanceof Error ? error.message : 'Unable to load the index.';
+    } finally {
+      isLoading = false;
+    }
   });
 
   function scheduleSearch(_query: string): void {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(loadResults, 120);
+    visibleLimit = 120;
+    timer = setTimeout(() => void loadResults(_query), 170);
   }
 
-  async function loadResults(): Promise<void> {
+  async function loadResults(value = query): Promise<void> {
+    searchController?.abort();
+    const controller = new AbortController();
+    searchController = controller;
     isSearching = true;
     try {
-      results = await searchExplorer(query, types);
+      results = await searchExplorer(value, types, controller.signal);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        errorMessage =
+          error instanceof Error ? error.message : 'Unable to search the index.';
+      }
     } finally {
-      isSearching = false;
+      if (searchController === controller) isSearching = false;
     }
   }
 
@@ -93,15 +113,26 @@
     pushHistory = true
   ): Promise<void> {
     errorMessage = null;
+    detailController?.abort();
+    const controller = new AbortController();
+    detailController = controller;
     try {
-      selected = await getExplorerDetail(item.id);
+      selected = await getExplorerDetail(item.id, controller.signal);
       addRecentlyVisited(selected.object);
       if (pushHistory) pushHistoryItem(selected.object);
     } catch (error) {
-      errorMessage =
-        error instanceof Error ? error.message : 'Unable to open object.';
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        errorMessage =
+          error instanceof Error ? error.message : 'Unable to open object.';
+      }
     }
   }
+
+  onDestroy(() => {
+    if (timer) clearTimeout(timer);
+    searchController?.abort();
+    detailController?.abort();
+  });
 
   function pushHistoryItem(item: LinkableObject): void {
     if (history[historyIndex]?.id === item.id) return;
@@ -176,9 +207,12 @@
     </div>
 
     <div class="mt-5 space-y-5">
-      {#if isSearching || isLoading}
-        <p class="text-sm text-muted-foreground">Searching...</p>
+      {#if isLoading}
+        <p class="text-sm text-muted-foreground">Loading index…</p>
       {:else}
+        {#if isSearching}
+          <p class="mb-3 text-xs text-accent" aria-live="polite">Updating results…</p>
+        {/if}
         {#each grouped as group}
           {#if group.items.length > 0}
             <section>
@@ -220,6 +254,15 @@
         {/each}
         {#if results.length === 0}
           <p class="text-sm text-muted-foreground">No results.</p>
+        {/if}
+        {#if hiddenResultCount > 0}
+          <button
+            class="mt-3 h-9 w-full rounded-md border border-border bg-muted/20 text-xs text-muted-foreground transition hover:text-foreground"
+            type="button"
+            on:click={() => (visibleLimit += 120)}
+          >
+            Show {Math.min(120, hiddenResultCount)} more · {hiddenResultCount} remaining
+          </button>
         {/if}
       {/if}
     </div>

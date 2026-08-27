@@ -85,10 +85,21 @@ def test_universal_linking_engine_writes_markdown_links(tmp_path: Path) -> None:
     assert "[[Bandits]]" in brainstorm_markdown
     assert "[[Bayesian Learning]]" in brainstorm_markdown
 
+    original_read_text = engine._read_text
+    read_count = 0
+
+    def counted_read_text(path: Path) -> str:
+        nonlocal read_count
+        read_count += 1
+        return original_read_text(path)
+
+    engine._read_text = counted_read_text
     paper_relations = engine.get_relations(f"paper:{first_paper.id}")
+    reads_after_first_relation_lookup = read_count
     assert [item.title for item in paper_relations.outgoing["paper"]] == ["Paper Two"]
     assert [item.title for item in paper_relations.outgoing["concept"]] == ["Bandits"]
 
     concept_relations = engine.get_relations(f"concept:{first_concept.slug}")
+    assert read_count == reads_after_first_relation_lookup
     assert [item.title for item in concept_relations.incoming["paper"]] == ["Paper One"]
     assert [item.title for item in concept_relations.incoming["brainstorm"]] == ["Ideas"]

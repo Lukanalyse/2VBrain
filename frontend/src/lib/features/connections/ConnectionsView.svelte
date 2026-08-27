@@ -7,7 +7,7 @@
     SlidersHorizontal,
     X
   } from '@lucide/svelte';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import { entityMeta } from '$lib/design/entities';
   import ConnectionsDetailsPanel from '$lib/features/connections/components/ConnectionsDetailsPanel.svelte';
@@ -68,6 +68,10 @@
   let graphDepth = $state(1);
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let targetTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchController: AbortController | null = null;
+  let targetController: AbortController | null = null;
+  let selectionController: AbortController | null = null;
+  let objectLimit = $state(50);
 
   const structureGroups = $derived(
     selected && connections
@@ -136,28 +140,70 @@
 
   function scheduleSearch(): void {
     if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(async () => {
-      objects = await searchConnectionObjects(query);
-    }, 140);
+    objectLimit = 50;
+    const value = query;
+    searchTimer = setTimeout(() => void runObjectSearch(value), 170);
   }
 
   function scheduleTargetSearch(): void {
     if (targetTimer) clearTimeout(targetTimer);
-    targetTimer = setTimeout(async () => {
-      targetResults = (await searchConnectionObjects(targetQuery)).filter(
-        (item) => item.id !== selected?.id
-      );
-    }, 140);
+    const value = targetQuery;
+    targetTimer = setTimeout(() => void runTargetSearch(value), 170);
+  }
+
+  async function runObjectSearch(value: string): Promise<void> {
+    searchController?.abort();
+    const controller = new AbortController();
+    searchController = controller;
+    try {
+      objects = await searchConnectionObjects(value, [], controller.signal);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        message = 'Unable to search the knowledge map.';
+      }
+    }
+  }
+
+  async function runTargetSearch(value: string): Promise<void> {
+    targetController?.abort();
+    const controller = new AbortController();
+    targetController = controller;
+    try {
+      targetResults = (
+        await searchConnectionObjects(value, [], controller.signal)
+      ).filter((item) => item.id !== selected?.id);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        message = 'Unable to search connection targets.';
+      }
+    }
   }
 
   async function selectObject(item: LinkableObject): Promise<void> {
+    selectionController?.abort();
+    const controller = new AbortController();
+    selectionController = controller;
     selected = item;
     creating = false;
     selectedTarget = null;
     targetQuery = '';
     message = null;
-    connections = await getObjectConnections(item.id);
+    try {
+      connections = await getObjectConnections(item.id, controller.signal);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        message = 'Unable to load this object’s connections.';
+      }
+    }
   }
+
+  onDestroy(() => {
+    if (searchTimer) clearTimeout(searchTimer);
+    if (targetTimer) clearTimeout(targetTimer);
+    searchController?.abort();
+    targetController?.abort();
+    selectionController?.abort();
+  });
 
   function beginCreate(): void {
     creating = true;
@@ -170,18 +216,89 @@
 
   async function confirmCreate(): Promise<void> {
     if (!selected || !selectedTarget) return;
-    await createConnection(selected.id, selectedTarget.id, selectedType);
-    await refreshSelected();
+    const source = selected;
+    const target = selectedTarget;
+    const optimisticId = `${source.id}=>${target.id}`;
+    const previousConnections = connections;
+    const previousGraph = graphData;
+    if (connections) {
+      connections = {
+        ...connections,
+        outgoing: [
+          ...connections.outgoing,
+          {
+            id: optimisticId,
+            source,
+            target,
+            relation_type: selectedType,
+            created_at: new Date().toISOString()
+          }
+        ]
+      };
+    }
+    graphData = {
+      nodes: [
+        ...graphData.nodes.filter(
+          (node) => node.id !== source.id && node.id !== target.id
+        ),
+        { id: source.id, type: source.type, title: source.title },
+        { id: target.id, type: target.type, title: target.title }
+      ],
+      edges: [
+        ...graphData.edges,
+        {
+          id: optimisticId,
+          source_id: source.id,
+          target_id: target.id,
+          relation_type: selectedType
+        }
+      ]
+    };
     creating = false;
     selectedTarget = null;
     targetQuery = '';
-    message = 'Connection created.';
+    message = 'Saving connection…';
+    try {
+      await createConnection(source.id, target.id, selectedType);
+      await refreshSelected();
+      message = 'Connection created.';
+    } catch (error) {
+      connections = previousConnections;
+      graphData = previousGraph;
+      message =
+        error instanceof Error ? error.message : 'Unable to create connection.';
+    }
   }
 
   async function removeConnection(connectionId: string): Promise<void> {
-    await deleteConnection(connectionId);
-    await refreshSelected();
-    message = 'Connection removed.';
+    const previousConnections = connections;
+    const previousGraph = graphData;
+    if (connections) {
+      connections = {
+        ...connections,
+        outgoing: connections.outgoing.filter(
+          (connection) => connection.id !== connectionId
+        ),
+        incoming: connections.incoming.filter(
+          (connection) => connection.id !== connectionId
+        )
+      };
+    }
+    graphData = {
+      ...graphData,
+      edges: graphData.edges.filter((edge) => edge.id !== connectionId)
+    };
+    message = 'Removing connection…';
+    try {
+      await deleteConnection(connectionId);
+      await refreshSelected();
+      message = 'Connection removed.';
+    } catch (error) {
+      connections = previousConnections;
+      graphData = previousGraph;
+      message =
+        error instanceof Error ? error.message : 'Unable to remove connection.';
+    }
   }
 
   async function refreshSelected(): Promise<void> {
@@ -246,7 +363,7 @@
       {#if loading}
         <p class="text-sm text-muted-foreground">Loading objects...</p>
       {:else}
-        {#each objects.slice(0, 50) as object}
+        {#each objects.slice(0, objectLimit) as object}
           {@const meta = entityMeta[object.type]}
           <button
             class={selected?.id === object.id
@@ -268,6 +385,15 @@
         {:else}
           <p class="text-sm text-muted-foreground">No objects found.</p>
         {/each}
+        {#if objects.length > objectLimit}
+          <button
+            class="mt-2 h-9 w-full rounded-md border border-border bg-muted/20 text-xs text-muted-foreground transition hover:text-foreground"
+            type="button"
+            onclick={() => (objectLimit += 50)}
+          >
+            Show {Math.min(50, objects.length - objectLimit)} more
+          </button>
+        {/if}
       {/if}
     </div>
   </aside>

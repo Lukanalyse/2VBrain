@@ -29,6 +29,7 @@ class StorageStatusResponse(BaseModel):
     vault_path: Path | None
     library_path: Path
     database_url: str
+    database_path: Path | None
     vector_store_path: Path | None
     vector_store_provider: str | None
     validation_message: str | None = None

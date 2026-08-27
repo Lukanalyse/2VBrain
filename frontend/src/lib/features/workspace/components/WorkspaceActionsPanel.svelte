@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Link2, Plus } from '@lucide/svelte';
+  import { onDestroy } from 'svelte';
 
   import TagBadges from '$lib/components/ui/TagBadges.svelte';
   import TagEditor from '$lib/components/ui/TagEditor.svelte';
@@ -36,6 +37,7 @@
   let busy = $state('');
   let message = $state<string | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchRequest = 0;
   let actionCopy = $derived({
     concept:
       context.object.type === 'concept'
@@ -67,12 +69,22 @@
 
   function scheduleTargetSearch(): void {
     if (searchTimer) clearTimeout(searchTimer);
+    const query = targetQuery;
+    const kind = targetKind;
+    const request = ++searchRequest;
     searchTimer = setTimeout(async () => {
-      targetResults = (await context.searchObjects(targetQuery)).filter(
-        (item) => item.type === targetKind && item.id !== context.object.id
+      const results = await context.searchObjects(query);
+      if (request !== searchRequest) return;
+      targetResults = results.filter(
+        (item) => item.type === kind && item.id !== context.object.id
       );
-    }, 140);
+    }, 170);
   }
+
+  onDestroy(() => {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchRequest += 1;
+  });
 
   async function runAction(
     name: string,

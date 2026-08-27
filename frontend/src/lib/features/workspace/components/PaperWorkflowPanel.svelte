@@ -1,6 +1,6 @@
 <script lang="ts">
   import { FileText, Link2, Plus, Search } from '@lucide/svelte';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import TagBadges from '$lib/components/ui/TagBadges.svelte';
   import TagEditor from '$lib/components/ui/TagEditor.svelte';
@@ -63,6 +63,7 @@
   let busy = $state('');
   let message = $state<string | null>(null);
   let paperSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  let paperSearchRequest = 0;
 
   let linkedProjects = $derived(
     unique([
@@ -187,15 +188,22 @@
 
   function schedulePaperSearch(): void {
     if (paperSearchTimer) clearTimeout(paperSearchTimer);
+    const request = ++paperSearchRequest;
+    const query = paperQuery.trim();
     paperSearchTimer = setTimeout(async () => {
-      const query = paperQuery.trim();
-      paperResults = query
+      const results = query
         ? (await context.searchObjects(query)).filter(
             (item) => item.type === 'paper' && item.id !== context.object.id
           )
         : [];
-    }, 140);
+      if (request === paperSearchRequest) paperResults = results;
+    }, 170);
   }
+
+  onDestroy(() => {
+    if (paperSearchTimer) clearTimeout(paperSearchTimer);
+    paperSearchRequest += 1;
+  });
 
   async function linkPaper(paper: LinkableObject): Promise<void> {
     await run(`paper-${paper.id}`, async () => {

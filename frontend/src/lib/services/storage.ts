@@ -1,6 +1,11 @@
 import type { StorageStatus, VaultValidation } from '$lib/types/storage';
 
 import { API_BASE_URL } from '$lib/config/api';
+import {
+  cachedQuery,
+  invalidateQueries,
+  primeQuery
+} from '$lib/services/queryCache';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -19,7 +24,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getStorageStatus(): Promise<StorageStatus> {
-  return request<StorageStatus>('/storage');
+  return cachedQuery(
+    'storage:status',
+    () => request<StorageStatus>('/storage'),
+    2_000
+  );
 }
 
 export async function waitForStorageStatus(
@@ -52,8 +61,12 @@ export function validateVault(vaultPath: string): Promise<VaultValidation> {
 }
 
 export function saveVaultPath(vaultPath: string): Promise<StorageStatus> {
+  invalidateQueries('storage:');
   return request<StorageStatus>('/storage/vault', {
     method: 'PUT',
     body: JSON.stringify({ vault_path: vaultPath })
+  }).then((status) => {
+    primeQuery('storage:status', status, 2_000);
+    return status;
   });
 }

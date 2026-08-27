@@ -34,23 +34,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function searchConnectionObjects(
   query = '',
-  types: LinkableType[] = []
+  types: LinkableType[] = [],
+  signal?: AbortSignal
 ): Promise<LinkableObject[]> {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   for (const type of types) params.append('types', type);
   const suffix = params.toString() ? `?${params.toString()}` : '';
   const response = await request<ConnectionSearchResponse>(
-    `/connections/search${suffix}`
+    `/connections/search${suffix}`,
+    { signal }
   );
   return response.objects;
 }
 
 export function getObjectConnections(
-  objectId: string
+  objectId: string,
+  signal?: AbortSignal
 ): Promise<ConnectionList> {
   return request<ConnectionList>(
-    `/connections/${encodeURIComponent(objectId)}`
+    `/connections/${encodeURIComponent(objectId)}`,
+    { signal }
   );
 }
 

@@ -59,3 +59,22 @@ def test_validate_rejects_file_path(tmp_path: Path) -> None:
     assert result.is_valid is False
     assert result.error_code == "not_a_directory"
     assert result.failed_check == "is_dir"
+
+
+def test_storage_status_exposes_database_and_embedded_vector_index_paths(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "Research OS" / "research_os.db"
+    manager = VaultManager(
+        Settings(
+            workspace_config_path=tmp_path / "workspace.json",
+            library_path=tmp_path / "library",
+            database_url=f"sqlite:///{database_path.as_posix()}",
+        )
+    )
+
+    result = manager.get_storage_status()
+
+    assert result.database_path == database_path
+    assert result.vector_store_path == database_path
+    assert result.vector_store_provider == "sqlite"

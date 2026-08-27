@@ -23,15 +23,28 @@ class VaultManager:
         vault_path = self._runtime_vault_root(vault_path)
         validation = self.validate_vault(vault_path) if vault_path else None
 
+        database_path = self._database_path()
         return StorageStatusResponse(
             is_configured=validation.is_valid if validation else False,
             vault_path=vault_path,
             library_path=self._settings.library_path,
             database_url=self._settings.database_url,
-            vector_store_path=None,
-            vector_store_provider=self._settings.vector_store_provider,
+            database_path=database_path,
+            # The current semantic index (FTS plus packed embeddings) is stored
+            # in the same SQLite database as the rest of the derived metadata.
+            vector_store_path=database_path,
+            vector_store_provider=self._settings.vector_store_provider or "sqlite",
             validation_message=validation.message if validation else "No vault configured.",
         )
+
+    def _database_path(self) -> Path | None:
+        prefix = "sqlite:///"
+        if not self._settings.database_url.startswith(prefix):
+            return None
+        raw_path = self._settings.database_url[len(prefix) :]
+        if not raw_path or raw_path == ":memory:":
+            return None
+        return Path(raw_path).expanduser().resolve(strict=False)
 
     def validate_vault(self, vault_path: Path | None) -> VaultValidationResponse:
         received_path = str(vault_path) if vault_path is not None else None

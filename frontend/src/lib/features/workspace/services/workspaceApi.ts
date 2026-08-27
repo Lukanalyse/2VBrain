@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '$lib/config/api';
 import type { LinkableObject } from '$lib/features/linking/types/linking';
+import { cachedQuery, invalidateQueries } from '$lib/services/queryCache';
 
 export type HomeSummary = {
   continue_reading: LinkableObject[];
@@ -95,22 +96,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(payload?.detail ?? 'Workspace request failed.');
   }
 
-  return response.json() as Promise<T>;
+  const payload = response.json() as Promise<T>;
+  if (init?.method && init.method !== 'GET') {
+    invalidateQueries('workspace:');
+    invalidateQueries('explorer:');
+  }
+  return payload;
 }
 
 export function getHomeSummary(): Promise<HomeSummary> {
-  return request<HomeSummary>('/workspace/home');
+  return cachedQuery(
+    'workspace:home',
+    () => request<HomeSummary>('/workspace/home'),
+    5_000
+  );
 }
 
-export function getActiveWorkspace(): Promise<ActiveWorkspaceSummary> {
-  return request<ActiveWorkspaceSummary>('/workspace/active');
+export function getActiveWorkspace(force = false): Promise<ActiveWorkspaceSummary> {
+  if (force) invalidateQueries('workspace:active');
+  return cachedQuery(
+    'workspace:active',
+    () => request<ActiveWorkspaceSummary>('/workspace/active'),
+    2_000
+  );
 }
 
 export function getWorkspaceMarkdown(
-  objectId: string
+  objectId: string,
+  signal?: AbortSignal
 ): Promise<WorkspaceMarkdownDocument> {
   return request<WorkspaceMarkdownDocument>(
-    `/workspace/objects/${encodeURIComponent(objectId)}/markdown`
+    `/workspace/objects/${encodeURIComponent(objectId)}/markdown`,
+    { signal }
   );
 }
 

@@ -17,8 +17,11 @@ class ConceptManager:
         self._vault_manager = vault_manager
         self._library_repository = library_repository
 
-    def list_concepts(self) -> list[ConceptResponse]:
-        concepts = [self._concept_from_path(path) for path in self._concepts_dir().glob("*.md")]
+    def list_concepts(self, *, include_link_counts: bool = True) -> list[ConceptResponse]:
+        concepts = [
+            self._concept_from_path(path, include_link_counts=include_link_counts)
+            for path in self._concepts_dir().glob("*.md")
+        ]
         return sorted(concepts, key=lambda concept: concept.name.lower())
 
     def create_concept(self, payload: ConceptCreate) -> ConceptResponse:
@@ -137,14 +140,20 @@ class ConceptManager:
             raise ConceptManagerError("Configure a valid Obsidian vault before managing concepts.")
         return status.vault_path / "03 Knowledge"
 
-    def _concept_from_path(self, path: Path) -> ConceptResponse:
+    def _concept_from_path(
+        self, path: Path, *, include_link_counts: bool = True
+    ) -> ConceptResponse:
         content = path.read_text(encoding="utf-8")
         metadata = self._frontmatter(content)
         name = path.stem
         category = metadata.get("category", "")
         tags = [tag.strip() for tag in metadata.get("tags", "").split(",") if tag.strip()]
-        linked_papers_count = len(self.get_linked_papers(name))
-        linked_concepts_count = len(set(re.findall(r"\[\[([^\]]+)\]\]", content)))
+        linked_papers_count = len(self.get_linked_papers(name)) if include_link_counts else 0
+        linked_concepts_count = (
+            len(set(re.findall(r"\[\[([^\]]+)\]\]", content)))
+            if include_link_counts
+            else 0
+        )
 
         return ConceptResponse(
             name=name,

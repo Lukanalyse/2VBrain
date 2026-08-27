@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Link2, Search } from '@lucide/svelte';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
 
   import {
     createLinks,
@@ -24,6 +24,7 @@
   let message: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let hasMounted = false;
+  let searchController: AbortController | null = null;
 
   $: if (hasMounted) scheduleSearch(query, allowedTypes);
   $: visibleResults = results.filter(
@@ -32,15 +33,26 @@
 
   function scheduleSearch(_query: string, _allowedTypes: LinkableType[]): void {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(loadResults, 150);
+    timer = setTimeout(() => void loadResults(_query), 170);
   }
 
-  async function loadResults(): Promise<void> {
+  async function loadResults(value = query): Promise<void> {
+    searchController?.abort();
+    const controller = new AbortController();
+    searchController = controller;
     isSearching = true;
     try {
-      results = await searchLinkableObjects(query, allowedTypes);
+      results = await searchLinkableObjects(
+        value,
+        allowedTypes,
+        controller.signal
+      );
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        message = 'Unable to search the knowledge index.';
+      }
     } finally {
-      isSearching = false;
+      if (searchController === controller) isSearching = false;
     }
   }
 
@@ -72,6 +84,11 @@
   onMount(() => {
     hasMounted = true;
     void loadResults();
+  });
+
+  onDestroy(() => {
+    if (timer) clearTimeout(timer);
+    searchController?.abort();
   });
 </script>
 
@@ -109,10 +126,11 @@
 
   <div class="mt-4 max-h-72 space-y-2 overflow-auto">
     {#if isSearching}
-      <p class="text-sm text-muted-foreground">Searching...</p>
-    {:else if visibleResults.length === 0}
+      <p class="text-xs text-accent" aria-live="polite">Updating…</p>
+    {/if}
+    {#if !isSearching && visibleResults.length === 0}
       <p class="text-sm text-muted-foreground">No objects found.</p>
-    {:else}
+    {:else if visibleResults.length > 0}
       {#each visibleResults as item}
         <label
           class="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-muted/20 px-3 py-3 transition hover:border-accent/40"

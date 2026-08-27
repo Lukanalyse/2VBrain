@@ -12,6 +12,7 @@
     FolderSearch,
     HardDrive,
     Loader2,
+    Copy,
     SearchCode
   } from '@lucide/svelte';
   import { onMount } from 'svelte';
@@ -42,6 +43,9 @@
   let desktopAvailable = false;
 
   $: canSave = Boolean(validation?.is_valid) && !isSaving;
+  $: actionIsError = Boolean(
+    actionMessage && /unable|unavailable|no configured|does not exist/i.test(actionMessage)
+  );
 
   onMount(async () => {
     desktopAvailable = hasDesktopIntegration();
@@ -162,6 +166,19 @@
     }
     actionMessage = (await revealPath(path)) ?? `Revealed ${path}.`;
   }
+
+  async function handleCopy(path: string | null): Promise<void> {
+    if (!path) {
+      actionMessage = 'No configured path to copy.';
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(path);
+      actionMessage = 'Path copied to the clipboard.';
+    } catch {
+      actionMessage = 'Unable to copy this path.';
+    }
+  }
 </script>
 
 <section class="px-4 py-6 lg:px-8 lg:py-8">
@@ -172,6 +189,28 @@
       title="Storage"
       description="Manage local workspace paths while keeping Obsidian as the source of truth."
     />
+
+    {#if actionMessage}
+      <div
+        class="sticky top-2 z-20 flex items-center gap-2 rounded-md border border-accent/25 bg-surface/95 px-3 py-2.5 text-sm text-foreground shadow-panel backdrop-blur"
+        aria-live="polite"
+      >
+        {#if actionIsError}
+          <AlertCircle size={15} class="shrink-0 text-entity-review" />
+        {:else}
+          <CheckCircle2 size={15} class="shrink-0 text-accent" />
+        {/if}
+        <span class="min-w-0 flex-1 truncate" title={actionMessage}>{actionMessage}</span>
+        <button
+          class="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          type="button"
+          aria-label="Dismiss message"
+          on:click={() => (actionMessage = null)}
+        >
+          Dismiss
+        </button>
+      </div>
+    {/if}
 
     <Card className="p-5">
       <div class="flex items-start gap-4">
@@ -299,8 +338,10 @@
           icon: FolderOpen,
           label: 'Vault',
           value: storageStatus?.vault_path ?? 'Not configured',
+          configured: Boolean(storageStatus?.vault_path),
           onOpen: () => handleOpen(storageStatus?.vault_path ?? null),
-          onReveal: () => handleReveal(storageStatus?.vault_path ?? null)
+          onReveal: () => handleReveal(storageStatus?.vault_path ?? null),
+          onCopy: () => handleCopy(storageStatus?.vault_path ?? null)
         })}
       </Card>
 
@@ -309,8 +350,10 @@
           icon: HardDrive,
           label: 'Research Library',
           value: storageStatus?.library_path ?? '../library',
+          configured: Boolean(storageStatus?.library_path),
           onOpen: () => handleOpen(storageStatus?.library_path ?? null),
-          onReveal: () => handleReveal(storageStatus?.library_path ?? null)
+          onReveal: () => handleReveal(storageStatus?.library_path ?? null),
+          onCopy: () => handleCopy(storageStatus?.library_path ?? null)
         })}
       </Card>
 
@@ -318,9 +361,14 @@
         {@render StorageRow({
           icon: Database,
           label: 'Database',
-          value: storageStatus?.database_url ?? 'sqlite:///./research_os.db',
-          onOpen: () => handleOpen(storageStatus?.database_url ?? null),
-          onReveal: () => handleReveal(storageStatus?.database_url ?? null)
+          value:
+            storageStatus?.database_path ??
+            storageStatus?.database_url ??
+            'Not configured',
+          configured: Boolean(storageStatus?.database_path),
+          onOpen: () => handleOpen(storageStatus?.database_path ?? null),
+          onReveal: () => handleReveal(storageStatus?.database_path ?? null),
+          onCopy: () => handleCopy(storageStatus?.database_path ?? null)
         })}
       </Card>
 
@@ -332,19 +380,14 @@
             storageStatus?.vector_store_path ??
             storageStatus?.vector_store_provider ??
             'Not configured',
+          configured: Boolean(storageStatus?.vector_store_path),
           onOpen: () => handleOpen(storageStatus?.vector_store_path ?? null),
-          onReveal: () => handleReveal(storageStatus?.vector_store_path ?? null)
+          onReveal: () => handleReveal(storageStatus?.vector_store_path ?? null),
+          onCopy: () => handleCopy(storageStatus?.vector_store_path ?? null)
         })}
       </Card>
     </div>
 
-    {#if actionMessage}
-      <div
-        class="rounded-md border border-border bg-muted/25 px-3 py-3 text-sm text-muted-foreground"
-      >
-        {actionMessage}
-      </div>
-    {/if}
   </div>
 </section>
 
@@ -352,14 +395,18 @@
   icon,
   label,
   value,
+  configured,
   onOpen,
-  onReveal
+  onReveal,
+  onCopy
 }: {
   icon: Component;
   label: string;
   value: string;
+  configured: boolean;
   onOpen: () => void;
   onReveal: () => void;
+  onCopy: () => void;
 })}
   <div class="flex items-start gap-4">
     <div
@@ -368,12 +415,23 @@
       <svelte:component this={icon} size={18} strokeWidth={1.8} />
     </div>
     <div class="min-w-0 flex-1">
-      <p class="text-sm font-medium text-foreground">{label}</p>
-      <p class="mt-1 truncate text-sm text-muted-foreground">{value}</p>
+      <div class="flex items-center gap-2">
+        <p class="text-sm font-medium text-foreground">{label}</p>
+        <span
+          class={configured
+            ? 'inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-accent'
+            : 'text-[10px] uppercase tracking-wide text-muted-foreground'}
+        >
+          <span class={configured ? 'h-1.5 w-1.5 rounded-full bg-accent' : 'h-1.5 w-1.5 rounded-full bg-muted-foreground'}></span>
+          {configured ? 'Ready' : 'Missing'}
+        </span>
+      </div>
+      <p class="mt-1 truncate text-sm text-muted-foreground" title={value}>{value}</p>
       <div class="mt-4 flex flex-wrap gap-2">
         <button
           class="h-8 rounded-md border border-border bg-background/40 px-2.5 text-xs text-muted-foreground transition hover:text-foreground"
           type="button"
+          disabled={!configured}
           on:click={onOpen}
         >
           Open Folder
@@ -381,9 +439,18 @@
         <button
           class="h-8 rounded-md border border-border bg-background/40 px-2.5 text-xs text-muted-foreground transition hover:text-foreground"
           type="button"
+          disabled={!configured}
           on:click={onReveal}
         >
           Open in Finder / Explorer
+        </button>
+        <button
+          class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background/40 px-2.5 text-xs text-muted-foreground transition hover:text-foreground disabled:opacity-40"
+          type="button"
+          disabled={!configured}
+          on:click={onCopy}
+        >
+          <Copy size={13} /> Copy path
         </button>
       </div>
     </div>

@@ -1,5 +1,7 @@
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 
 from repositories.library_repository import LibraryRepository
 from schemas.linking import LinkableObject, LinkableType, ObjectRelations
@@ -9,6 +11,17 @@ from services.vault_manager import VaultManager
 
 class LinkingEngineError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class _CatalogEntry:
+    signature: tuple[object, ...]
+    objects: tuple[LinkableObject, ...]
+
+
+_CACHE_LOCK = RLock()
+_CATALOG_CACHE: dict[str, _CatalogEntry] = {}
+_TEXT_CACHE: dict[str, tuple[int, int, str]] = {}
 
 
 SECTION_BY_TYPE: dict[LinkableType, str] = {
@@ -43,6 +56,10 @@ class LinkingEngine:
         self._vault_manager = vault_manager
         self._library_repository = library_repository
         self._concept_manager = concept_manager
+        self._objects_cache: list[LinkableObject] | None = None
+        self._relation_cache: (
+            dict[str, tuple[list[LinkableObject], list[LinkableObject]]] | None
+        ) = None
 
     def search(
         self, query: str = "", object_types: list[LinkableType] | None = None
@@ -69,24 +86,15 @@ class LinkingEngine:
 
     def get_relations(self, source_id: str) -> ObjectRelations:
         source = self._get_object(source_id)
-        objects = self._objects()
-        object_by_label = self._object_lookup(objects)
+        relations = self._relation_index()
         outgoing = self._empty_groups()
         incoming = self._empty_groups()
 
-        source_content = self._read_text(Path(source.markdown_path))
-        source_links = self._linked_objects(source_content, object_by_label)
-        for target in source_links:
-            if target.id != source.id:
-                outgoing[target.type].append(target)
-
-        for candidate in objects:
-            if candidate.id == source.id:
-                continue
-            candidate_content = self._read_text(Path(candidate.markdown_path))
-            candidate_links = self._linked_objects(candidate_content, object_by_label)
-            if any(item.id == source.id for item in candidate_links):
-                incoming[candidate.type].append(candidate)
+        outgoing_items, incoming_items = relations.get(source_id, ([], []))
+        for target in outgoing_items:
+            outgoing[target.type].append(target)
+        for candidate in incoming_items:
+            incoming[candidate.type].append(candidate)
 
         return ObjectRelations(source=source, outgoing=outgoing, incoming=incoming)
 
@@ -110,11 +118,38 @@ class LinkingEngine:
                 content = self._replace_section(content, section, body)
 
         path.write_text(content, encoding="utf-8")
+        self.invalidate_path(path)
         return targets
 
+    def warm(self) -> tuple[int, int]:
+        """Populate the object, Markdown and relation caches before the UI opens."""
+        objects = self._objects()
+        relations = self._relation_index()
+        edge_count = sum(len(outgoing) for outgoing, _ in relations.values())
+        return len(objects), edge_count
+
+    def invalidate_path(self, path: Path) -> None:
+        resolved = str(path.expanduser().resolve(strict=False))
+        with _CACHE_LOCK:
+            _TEXT_CACHE.pop(resolved, None)
+        self._relation_cache = None
+
     def _objects(self) -> list[LinkableObject]:
+        if self._objects_cache is not None:
+            return self._objects_cache
+
+        paper_objects = self._paper_objects()
+        vault_root = self._vault_path()
+        signature = self._catalog_signature(vault_root, paper_objects)
+        cache_key = str(vault_root.expanduser().resolve(strict=False))
+        with _CACHE_LOCK:
+            cached = _CATALOG_CACHE.get(cache_key)
+            if cached is not None and cached.signature == signature:
+                self._objects_cache = list(cached.objects)
+                return self._objects_cache
+
         base = [
-            *self._paper_objects(),
+            *paper_objects,
             *self._concept_objects(),
             *self._markdown_objects(LinkableType.project, "01 Projects", "Project"),
             *self._markdown_objects(LinkableType.brainstorm, "04 Brainstorm", "Brainstorm"),
@@ -122,7 +157,41 @@ class LinkingEngine:
                 LinkableType.review, "05 Literature Reviews", "Literature Review"
             ),
         ]
-        return [*base, *self._note_objects(base)]
+        objects = [*base, *self._note_objects(base)]
+        with _CACHE_LOCK:
+            _CATALOG_CACHE[cache_key] = _CatalogEntry(
+                signature=signature, objects=tuple(objects)
+            )
+        self._objects_cache = objects
+        return objects
+
+    def _catalog_signature(
+        self, vault_root: Path, paper_objects: list[LinkableObject]
+    ) -> tuple[object, ...]:
+        paper_signature = tuple(
+            (
+                item.id,
+                item.title,
+                item.subtitle,
+                item.markdown_path,
+                item.collection_status,
+                item.project_id,
+            )
+            for item in paper_objects
+        )
+        markdown_signature: list[tuple[str, int, int]] = []
+        try:
+            paths = vault_root.rglob("*.md")
+            for path in paths:
+                try:
+                    stat = path.stat()
+                    relative = str(path.relative_to(vault_root))
+                    markdown_signature.append((relative, stat.st_mtime_ns, stat.st_size))
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        return paper_signature, tuple(sorted(markdown_signature))
 
     def _note_objects(self, parents: list[LinkableObject]) -> list[LinkableObject]:
         """Secondary notes (files in `<object>.notes/`) as first-class objects.
@@ -172,7 +241,7 @@ class LinkingEngine:
                 subtitle=concept.category or "Concept",
                 markdown_path=concept.markdown_path,
             )
-            for concept in self._concept_manager.list_concepts()
+            for concept in self._concept_manager.list_concepts(include_link_counts=False)
         ]
 
     def _markdown_objects(
@@ -272,9 +341,58 @@ class LinkingEngine:
 
     def _read_text(self, path: Path) -> str:
         try:
-            return path.read_text(encoding="utf-8")
+            resolved = path.expanduser().resolve(strict=False)
+            stat = resolved.stat()
         except OSError:
             return ""
+        key = str(resolved)
+        with _CACHE_LOCK:
+            cached = _TEXT_CACHE.get(key)
+            if cached is not None and cached[:2] == (stat.st_mtime_ns, stat.st_size):
+                return cached[2]
+        try:
+            content = resolved.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+        with _CACHE_LOCK:
+            _TEXT_CACHE[key] = (stat.st_mtime_ns, stat.st_size, content)
+        return content
+
+    def _relation_index(
+        self,
+    ) -> dict[str, tuple[list[LinkableObject], list[LinkableObject]]]:
+        if self._relation_cache is not None:
+            return self._relation_cache
+
+        objects = self._objects()
+        object_by_label = self._object_lookup(objects)
+        outgoing_by_id: dict[str, list[LinkableObject]] = {
+            item.id: [] for item in objects
+        }
+        incoming_by_id: dict[str, list[LinkableObject]] = {
+            item.id: [] for item in objects
+        }
+        for source in objects:
+            content = self._read_text(Path(source.markdown_path))
+            targets = self._linked_objects(content, object_by_label)
+            for target in targets:
+                if target.id == source.id:
+                    continue
+                outgoing_by_id[source.id].append(target)
+                incoming_by_id[target.id].append(source)
+
+        self._relation_cache = {
+            object_id: (
+                sorted(outgoing_by_id[object_id], key=self._object_sort_key),
+                sorted(incoming_by_id[object_id], key=self._object_sort_key),
+            )
+            for object_id in outgoing_by_id
+        }
+        return self._relation_cache
+
+    @staticmethod
+    def _object_sort_key(item: LinkableObject) -> tuple[str, str]:
+        return item.type.value, item.title.lower()
 
     def _notes_dir(self, item: LinkableObject) -> Path:
         markdown_path = Path(item.markdown_path).expanduser().resolve()

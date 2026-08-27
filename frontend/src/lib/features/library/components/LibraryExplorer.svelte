@@ -17,6 +17,7 @@
   let query = $state('');
   let ascending = $state(true);
   let collapsed = $state<Record<string, boolean>>({});
+  let visibleLimit = $state(120);
 
   export async function load(): Promise<void> {
     loading = true;
@@ -43,23 +44,37 @@
       : objects
   );
 
+  let sortedFiltered = $derived(
+    filtered
+      .slice()
+      .sort((a, b) =>
+        ascending
+          ? a.title.localeCompare(b.title)
+          : b.title.localeCompare(a.title)
+      )
+  );
+
+  let visibleObjects = $derived(sortedFiltered.slice(0, visibleLimit));
+
   let groups = $derived(
     entityTypes
       .map((type) => ({
         type,
         meta: entityMeta[type],
-        items: filtered
+        items: visibleObjects
           .filter((object) => object.type === type)
-          .sort((a, b) =>
-            ascending
-              ? a.title.localeCompare(b.title)
-              : b.title.localeCompare(a.title)
-          )
       }))
       .filter((group) => group.items.length > 0)
   );
 
   let total = $derived(filtered.length);
+  let hiddenCount = $derived(Math.max(0, total - visibleObjects.length));
+
+  $effect(() => {
+    void normalizedQuery;
+    void ascending;
+    visibleLimit = 120;
+  });
 
   function isCollapsed(type: LinkableType): boolean {
     // A search auto-expands every matching group.
@@ -106,7 +121,7 @@
     </button>
     <span class="index-count shrink-0 text-xs text-muted-foreground">
       <span class="h-1.5 w-1.5 bg-accent"></span>
-      {total} objects
+      {visibleObjects.length === total ? total : `${visibleObjects.length}/${total}`} objects
     </span>
   </div>
 
@@ -193,6 +208,15 @@
           {/if}
         </section>
       {/each}
+      {#if hiddenCount > 0}
+        <button
+          class="mx-auto mt-1 inline-flex h-10 items-center justify-center rounded-md border border-border bg-surface-raised/70 px-4 text-xs font-medium text-muted-foreground transition hover:border-accent/40 hover:text-foreground"
+          type="button"
+          onclick={() => (visibleLimit += 120)}
+        >
+          Show {Math.min(120, hiddenCount)} more · {hiddenCount} remaining
+        </button>
+      {/if}
     </div>
   {/if}
 </div>

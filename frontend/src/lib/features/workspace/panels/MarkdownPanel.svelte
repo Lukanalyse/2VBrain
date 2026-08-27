@@ -22,6 +22,7 @@
   let activeSuggestion = $state(0);
   let completionStart = -1;
   let completionQuery = '';
+  let completionRequest = 0;
 
   async function handleInput(event: Event): Promise<void> {
     const value = (event.currentTarget as HTMLTextAreaElement).value;
@@ -42,11 +43,15 @@
 
     completionQuery = match[1];
     completionStart = cursor - match[0].length;
-    suggestions = (await context.searchObjects(completionQuery)).slice(0, 8);
+    const request = ++completionRequest;
+    const nextSuggestions = await context.searchObjects(completionQuery);
+    if (request !== completionRequest) return;
+    suggestions = nextSuggestions.slice(0, 8);
     activeSuggestion = 0;
   }
 
   function closeCompletions(): void {
+    completionRequest += 1;
     suggestions = [];
     activeSuggestion = 0;
     completionStart = -1;

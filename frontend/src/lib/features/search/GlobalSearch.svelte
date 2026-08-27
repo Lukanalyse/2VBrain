@@ -8,7 +8,7 @@
     Boxes,
     Brain
   } from '@lucide/svelte';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import { searchLinkableObjects } from '$lib/features/linking/services/linkingApi';
   import type {
@@ -22,6 +22,8 @@
   let results: LinkableObject[] = [];
   let isSearching = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let searchController: AbortController | null = null;
+  let input: HTMLInputElement;
   let hasMounted = false;
 
   const types: LinkableType[] = [
@@ -57,15 +59,27 @@
 
   function scheduleSearch(_query: string): void {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(loadResults, 120);
+    timer = setTimeout(() => void loadResults(_query), 160);
   }
 
-  async function loadResults(): Promise<void> {
+  async function loadResults(value = query): Promise<void> {
+    searchController?.abort();
+    if (!value.trim()) {
+      results = [];
+      isSearching = false;
+      return;
+    }
+    const controller = new AbortController();
+    searchController = controller;
     isSearching = true;
     try {
-      results = query.trim() ? await searchLinkableObjects(query, types) : [];
+      results = await searchLinkableObjects(value, types, controller.signal);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        results = [];
+      }
     } finally {
-      isSearching = false;
+      if (searchController === controller) isSearching = false;
     }
   }
 
@@ -75,6 +89,20 @@
 
   onMount(() => {
     hasMounted = true;
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        input?.focus();
+        input?.select();
+      }
+    };
+    window.addEventListener('keydown', focusSearch);
+    return () => window.removeEventListener('keydown', focusSearch);
+  });
+
+  onDestroy(() => {
+    if (timer) clearTimeout(timer);
+    searchController?.abort();
   });
 </script>
 
@@ -84,11 +112,15 @@
   >
     <Search size={16} />
     <input
+      bind:this={input}
       bind:value={query}
       class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
       placeholder="Search papers, concepts, projects, brainstorm, reviews"
       type="search"
     />
+    {#if compact && !query}
+      <kbd class="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground 2xl:inline">⌘K</kbd>
+    {/if}
   </label>
 
   {#if query.trim()}
@@ -96,8 +128,9 @@
       class="absolute left-0 right-0 top-12 z-40 max-h-[520px] overflow-auto rounded-lg border border-border bg-background p-3 shadow-panel"
     >
       {#if isSearching}
-        <p class="px-2 py-2 text-sm text-muted-foreground">Searching...</p>
-      {:else}
+        <p class="px-2 pb-1 text-xs text-accent" aria-live="polite">Updating results…</p>
+      {/if}
+      {#if !isSearching || results.length > 0}
         {#each grouped as group}
           {#if group.items.length > 0}
             <section class="py-2">

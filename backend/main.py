@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -7,11 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.router import api_router
 from core.settings import get_settings
 from database.session import init_db
+from services.knowledge_warmup import warm_knowledge_catalog
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_db()
+    await asyncio.to_thread(warm_knowledge_catalog)
     yield
 
 

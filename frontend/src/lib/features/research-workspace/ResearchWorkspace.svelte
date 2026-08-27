@@ -72,6 +72,8 @@
   let query = $state('');
   let activeFilter = $state<Filter>('all');
   let items = $state<LinkableObject[]>([]);
+  let activeObjects = $state<LinkableObject[]>([]);
+  let activeObjectsLoaded = $state(false);
   let listLoading = $state(true);
   let listError = $state<string | null>(null);
 
@@ -98,6 +100,10 @@
 
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let saveTask: Promise<void> | null = null;
+  let saveRequested = false;
+  let openController: AbortController | null = null;
+  let listRequest = 0;
 
   const isPaper = $derived(selected?.type === 'paper');
   const relatedItems = $derived(detail?.all_related ?? []);
@@ -174,7 +180,7 @@
           refreshObject: async () => {
             if (!selected) return;
             await openObject(selected, false, true);
-            await loadList(query, activeFilter);
+            await loadList(query, activeFilter, true);
           }
         }
       : null
@@ -213,23 +219,33 @@
     void openRequestedObject(objectId, sourceKind);
   });
 
-  async function loadList(q: string, filter: Filter): Promise<void> {
-    listLoading = true;
+  async function loadList(
+    q: string,
+    filter: Filter,
+    refresh = false
+  ): Promise<void> {
+    const request = ++listRequest;
+    const shouldFetch = refresh || !activeObjectsLoaded;
+    if (shouldFetch) listLoading = true;
     listError = null;
     try {
-      const workspace = await getActiveWorkspace();
-      const seen = new Set<string>();
-      const activeObjects = [
-        ...workspace.projects,
-        ...workspace.reading,
-        ...workspace.writing,
-        ...workspace.brainstorms
-      ].filter((object) => {
-        if (seen.has(object.id)) return false;
-        seen.add(object.id);
-        return true;
-      });
+      if (shouldFetch) {
+        const workspace = await getActiveWorkspace(refresh);
+        const seen = new Set<string>();
+        activeObjects = [
+          ...workspace.projects,
+          ...workspace.reading,
+          ...workspace.writing,
+          ...workspace.brainstorms
+        ].filter((object) => {
+          if (seen.has(object.id)) return false;
+          seen.add(object.id);
+          return true;
+        });
+        activeObjectsLoaded = true;
+      }
       const normalizedQuery = q.trim().toLowerCase();
+      if (request !== listRequest) return;
       items = activeObjects.filter(
         (object) =>
           (filter === 'all' || object.type === filter) &&
@@ -246,7 +262,7 @@
         error instanceof Error ? error.message : 'Unable to load active work.';
       items = [];
     } finally {
-      listLoading = false;
+      if (shouldFetch) listLoading = false;
     }
   }
 
@@ -275,7 +291,10 @@
     force = false
   ): Promise<void> {
     if (selected?.id === object.id && !force) return;
-    await flushSave();
+    if (!(await flushSave())) return;
+    openController?.abort();
+    const controller = new AbortController();
+    openController = controller;
     selected = object;
     focusEditorAfterOpen = focusEditor;
     detail = null;
@@ -285,9 +304,10 @@
     showPreview = false;
     try {
       const [objectDetail, markdown] = await Promise.all([
-        getExplorerDetail(object.id),
-        getWorkspaceMarkdown(object.id)
+        getExplorerDetail(object.id, controller.signal),
+        getWorkspaceMarkdown(object.id, controller.signal)
       ]);
+      if (openController !== controller) return;
       detail = objectDetail;
       selected = objectDetail.object;
       currentReadingStatus = readingStatusFromMarkdown(markdown.content);
@@ -297,10 +317,12 @@
       lastSaved = editable.body;
       saveState = 'saved';
     } catch (error) {
-      listError =
-        error instanceof Error ? error.message : 'Unable to open this object.';
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        listError =
+          error instanceof Error ? error.message : 'Unable to open this object.';
+      }
     } finally {
-      detailLoading = false;
+      if (openController === controller) detailLoading = false;
     }
   }
 
@@ -312,27 +334,49 @@
   }
 
   async function saveNow(): Promise<void> {
-    if (!selected || content === lastSaved) return;
-    const target = selected.id;
-    saveState = 'saving';
-    try {
-      const saved = await saveWorkspaceMarkdown(
-        target,
-        `${documentPrefix}${content}`
-      );
-      if (selected?.id !== target) return;
-      const editable = splitMarkdownDocument(saved.content);
-      documentPrefix = editable.prefix;
-      lastSaved = editable.body;
-      saveState = content === editable.body ? 'saved' : 'unsaved';
-    } catch {
-      saveState = 'error';
+    saveRequested = true;
+    if (saveTask) return saveTask;
+    saveTask = drainSaves().finally(() => {
+      saveTask = null;
+    });
+    return saveTask;
+  }
+
+  async function drainSaves(): Promise<void> {
+    while (saveRequested) {
+      saveRequested = false;
+      if (!selected || content === lastSaved) continue;
+      const target = selected.id;
+      const snapshot = content;
+      const prefix = documentPrefix;
+      saveState = 'saving';
+      try {
+        const saved = await saveWorkspaceMarkdown(
+          target,
+          `${prefix}${snapshot}`
+        );
+        if (selected?.id !== target) continue;
+        const editable = splitMarkdownDocument(saved.content);
+        documentPrefix = editable.prefix;
+        lastSaved = editable.body;
+        saveState = content === editable.body ? 'saved' : 'unsaved';
+      } catch {
+        saveState = 'error';
+        saveRequested = false;
+        break;
+      }
     }
   }
 
-  async function flushSave(): Promise<void> {
+  async function flushSave(): Promise<boolean> {
     if (saveTimer) clearTimeout(saveTimer);
     await saveNow();
+    return saveState !== 'error';
+  }
+
+  function retrySave(): void {
+    saveState = 'unsaved';
+    void saveNow();
   }
 
   async function setStatus(status: ReadingStatus): Promise<void> {
@@ -381,6 +425,7 @@
 
   function clearSelection(): void {
     void flushSave();
+    openController?.abort();
     selected = null;
     detail = null;
     content = '';
@@ -391,13 +436,13 @@
   function handleDeleted(objectId: string): void {
     items = items.filter((item) => item.id !== objectId);
     if (selected?.id === objectId) clearSelection();
-    void loadList(query, activeFilter);
+    void loadList(query, activeFilter, true);
   }
 
   async function handleRenamed(object: LinkableObject): Promise<void> {
     selected = object;
-    await openObject(object);
-    void loadList(query, activeFilter);
+    await openObject(object, false, true);
+    void loadList(query, activeFilter, true);
   }
 
   function filterLabel(filter: Filter): string {
@@ -514,7 +559,7 @@
       activeFilter = 'all';
       closeCreate();
       await openObject(createdObject, createdObject.type !== 'project');
-      await loadList('', 'all');
+      await loadList('', 'all', true);
     } catch (error) {
       createError =
         error instanceof Error ? error.message : 'Unable to create this item.';
@@ -796,6 +841,15 @@
                     ? 'Save failed'
                     : 'Saved'}
             </span>
+            {#if saveState === 'error'}
+              <button
+                type="button"
+                class="rounded-md border border-entity-review/35 px-2 py-0.5 text-[11px] text-entity-review transition hover:bg-entity-review/10"
+                onclick={retrySave}
+              >
+                Retry
+              </button>
+            {/if}
           </div>
           <h1 class="mt-1 truncate text-lg font-semibold text-foreground">
             {selected.title}
@@ -837,7 +891,7 @@
             onDeleted={handleDeleted}
             onRenamed={handleRenamed}
             onDuplicated={(object) => openObject(object)}
-            onMoved={() => loadList(query, activeFilter)}
+            onMoved={() => loadList(query, activeFilter, true)}
           />
         </div>
       </header>

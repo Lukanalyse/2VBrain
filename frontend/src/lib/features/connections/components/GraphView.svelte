@@ -96,6 +96,7 @@
       positionedNodes.map((node) => [node.id, node])
     )
   );
+  const animateSignals = $derived(graph.edges.length <= 80);
 
   function resetView(): void {
     zoom = 1;
@@ -222,11 +223,13 @@
           {#if source && target}
             {@const path = edgePath(source, target)}
             <path d={path} class="circuit-edge"></path>
-            <path
-              d={path}
-              class="circuit-signal"
-              style={`animation-delay: ${index * -240}ms`}
-            ></path>
+            {#if animateSignals}
+              <path
+                d={path}
+                class="circuit-signal"
+                style={`animation-delay: ${index * -240}ms`}
+              ></path>
+            {/if}
             <text
               x={(source.x + target.x) / 2}
               y={(source.y + target.y) / 2 - 9}
@@ -377,6 +380,13 @@
   .circuit-signal {
     fill: none;
     vector-effect: non-scaling-stroke;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .circuit-signal,
+    .node-status-light {
+      animation: none !important;
+    }
   }
 
   .circuit-edge {

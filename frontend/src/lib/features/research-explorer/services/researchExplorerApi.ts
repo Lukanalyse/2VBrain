@@ -7,9 +7,10 @@ import type {
   ExplorerObjectDetail,
   ExplorerSearchResponse
 } from '$lib/features/research-explorer/types/researchExplorer';
+import { cachedQuery } from '$lib/services/queryCache';
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { signal });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
       detail?: string;
@@ -21,22 +22,34 @@ async function request<T>(path: string): Promise<T> {
 
 export async function searchExplorer(
   query = '',
-  types: LinkableType[] = []
+  types: LinkableType[] = [],
+  signal?: AbortSignal
 ): Promise<LinkableObject[]> {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   for (const type of types) params.append('types', type);
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  const response = await request<ExplorerSearchResponse>(
-    `/research-explorer/search${suffix}`
-  );
+  const path = `/research-explorer/search${suffix}`;
+  const response = signal
+    ? await request<ExplorerSearchResponse>(path, signal)
+    : await cachedQuery(
+        `explorer:search:${path}`,
+        () => request<ExplorerSearchResponse>(path),
+        query ? 1_500 : 3_000
+      );
   return response.objects;
 }
 
 export function getExplorerDetail(
-  objectId: string
+  objectId: string,
+  signal?: AbortSignal
 ): Promise<ExplorerObjectDetail> {
-  return request<ExplorerObjectDetail>(
-    `/research-explorer/objects/${encodeURIComponent(objectId)}`
-  );
+  const path = `/research-explorer/objects/${encodeURIComponent(objectId)}`;
+  return signal
+    ? request<ExplorerObjectDetail>(path, signal)
+    : cachedQuery(
+        `explorer:detail:${objectId}`,
+        () => request<ExplorerObjectDetail>(path),
+        3_000
+      );
 }

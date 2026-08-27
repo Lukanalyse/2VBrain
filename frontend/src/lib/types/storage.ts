@@ -3,6 +3,7 @@ export type StorageStatus = {
   vault_path: string | null;
   library_path: string;
   database_url: string;
+  database_path: string | null;
   vector_store_path: string | null;
   vector_store_provider: string | null;
   validation_message: string | null;
