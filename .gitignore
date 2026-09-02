@@ -22,3 +22,15 @@ dist/
 
 # Local workspace configuration
 config/workspace.json
+
+# Local research data
+/library/**
+!/library/README.md
+/vault/**
+!/vault/README.md
+!/vault/.obsidian/
+!/vault/.obsidian/.gitkeep
+
+# Demo recordings
+*.mp4
+*.mov
