@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 from datetime import UTC, datetime
@@ -5,7 +6,7 @@ from pathlib import Path
 
 from repositories.library_repository import LibraryRepository
 from schemas.linking import LinkableObject, LinkableType
-from schemas.workspace import ActiveWorkspaceSummary, HomeSummary, WorkspaceNote
+from schemas.workspace import ActiveWorkspaceSummary, HomeSummary, PdfHighlights, WorkspaceNote
 from services.concept_manager import ConceptManager
 from services.linking_engine import LinkingEngine
 from services.vault_manager import VaultManager
@@ -17,6 +18,7 @@ class WorkspaceManagerError(Exception):
 
 READING_STATUSES = {"unread", "reading", "paused", "reviewed", "mastered"}
 COLLECTION_STATUSES = {"inbox", "workspace", "library"}
+NOTE_COLORS = {"cyan", "teal", "violet", "amber", "rose", "slate"}
 PRIMARY_NOTE_ID = "primary"
 PRIMARY_NOTE_TITLE = "Reading Note"
 
@@ -197,6 +199,40 @@ class WorkspaceManager:
         if not path.exists():
             raise WorkspaceManagerError("PDF file not found.")
         return path
+
+    def read_pdf_highlights(self, object_id: str) -> PdfHighlights:
+        path = self.get_paper_pdf_path(object_id).with_suffix(".highlights.json")
+        if not path.exists():
+            return PdfHighlights()
+        try:
+            return PdfHighlights.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise WorkspaceManagerError("Unable to read PDF highlights.") from error
+
+    def save_pdf_highlights(self, object_id: str, document: PdfHighlights) -> PdfHighlights:
+        from tempfile import NamedTemporaryFile
+        from pypdf import PdfReader
+
+        pdf = self.get_paper_pdf_path(object_id)
+        page_count = len(PdfReader(pdf).pages)
+        if any(mark.page > page_count for mark in document.highlights):
+            raise WorkspaceManagerError("Highlight page is outside this PDF.")
+        if len({mark.id for mark in document.highlights}) != len(document.highlights):
+            raise WorkspaceManagerError("Highlight IDs must be unique.")
+        path = pdf.with_suffix(".highlights.json")
+        temporary = None
+        try:
+            with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                    suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(document.model_dump(), stream, ensure_ascii=False)
+            temporary.replace(path)
+        except OSError as error:
+            raise WorkspaceManagerError("Unable to save PDF highlights.") from error
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return document
 
     def update_paper_status(
         self, object_id: str, reading_status: str
@@ -478,6 +514,38 @@ class WorkspaceManager:
         )
         return self._object_from_path(path, LinkableType.project, "Project")
 
+    def create_note(self, title: str, color: str | None = None) -> LinkableObject:
+        normalized_color = self._normalize_note_color(color)
+        path = self._create_markdown_note(
+            directory="02 Notes",
+            title=title,
+            template=self._standalone_note_template(title, normalized_color),
+        )
+        return self._object_from_path(
+            path,
+            LinkableType.note,
+            "Note",
+            color=normalized_color,
+        )
+
+    def set_object_color(self, object_id: str, color: str) -> LinkableObject:
+        item = self._get_linkable_object(object_id)
+        if item.type != LinkableType.note:
+            raise WorkspaceManagerError("Only Notes can have a custom color.")
+        normalized_color = self._normalize_note_color(color)
+        path = self._vault_file(item.markdown_path)
+        content = self._read_text_or_empty(path)
+        if not content.startswith("---\n"):
+            content = f"---\ncolor: {normalized_color}\n---\n\n{content}"
+        else:
+            content = self._replace_frontmatter_value(content, "color", normalized_color)
+        path.write_text(
+            content,
+            encoding="utf-8",
+        )
+        self._linking_engine.invalidate_path(path)
+        return item.model_copy(update={"color": normalized_color})
+
     def get_project(self, slug: str) -> tuple[LinkableObject, str]:
         return self._get_markdown_object("01 Projects", slug, LinkableType.project, "Project")
 
@@ -523,7 +591,12 @@ class WorkspaceManager:
         return self._object_from_path(path, object_type, subtitle), path.read_text(encoding="utf-8")
 
     def _object_from_path(
-        self, path: Path, object_type: LinkableType, subtitle: str
+        self,
+        path: Path,
+        object_type: LinkableType,
+        subtitle: str,
+        *,
+        color: str | None = None,
     ) -> LinkableObject:
         return LinkableObject(
             id=f"{object_type.value}:{path.stem}",
@@ -531,6 +604,25 @@ class WorkspaceManager:
             title=path.stem,
             subtitle=subtitle,
             markdown_path=str(path),
+            color=color,
+        )
+
+    def _normalize_note_color(self, color: str | None) -> str:
+        normalized = (color or "cyan").strip().lower()
+        if normalized not in NOTE_COLORS:
+            raise WorkspaceManagerError("Unsupported note color.")
+        return normalized
+
+    def _standalone_note_template(self, title: str, color: str) -> str:
+        now = datetime.now(UTC).isoformat()
+        return (
+            "---\n"
+            f"title: {title}\n"
+            "type: note\n"
+            f"color: {color}\n"
+            f"created: {now}\n"
+            f"updated: {now}\n"
+            "---\n\n"
         )
 
     def _get_linkable_object(self, object_id: str) -> LinkableObject:

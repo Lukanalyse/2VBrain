@@ -19,8 +19,17 @@
 
   onMount(async () => {
     try {
-      storageStatus = await waitForStorageStatus();
+      storageStatus = await waitForStorageStatus(1);
       storageError = null;
+      return;
+    } catch {
+      storageError = 'Starting the local service...';
+    }
+
+    try {
+      storageStatus = await waitForStorageStatus(240, 500);
+      storageError = null;
+      window.location.reload();
     } catch {
       storageError = 'Local service unavailable. Restart Research OS to retry.';
     }
@@ -76,7 +85,7 @@
     </nav>
 
     <div class="ml-auto flex min-w-0 items-center gap-2">
-      <div class="hidden w-[min(28vw,330px)] xl:block">
+      <div class="w-9 xl:w-[min(28vw,330px)]">
         <GlobalSearch compact />
       </div>
       <span

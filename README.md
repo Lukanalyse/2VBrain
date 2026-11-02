@@ -5,17 +5,15 @@ Research OS is an intelligence layer for an Obsidian vault.
 Obsidian remains the source of truth. Notes, PDFs, and images stay in open
 formats and remain usable without this application.
 
-## Phase 0 Scope
+## Platform
 
-This repository contains the project foundations only:
-
-- SvelteKit frontend shell
-- FastAPI backend shell
-- Shared configuration contract
-- Clear folder boundaries
-- Documentation for architecture decisions
-
-No business features are implemented in Phase 0.
+- SvelteKit workspace for reading PDFs and writing Markdown notes side by side
+- Persistent colored PDF highlights, keyboard shortcut, and navigation to saved passages
+- Local PDF decoders, including scanned JBIG2 documents
+- Shared note colors across Workspace, Library, and Map
+- Linked papers, notes, projects, and a knowledge graph
+- FastAPI backend and a local project research assistant using Ollama
+- macOS desktop application packaged with Tauri
 
 ## Repository Layout
 
@@ -39,7 +37,9 @@ The object model and recommended workflow are documented in
 ## Local Privacy
 
 - Project notes, PDFs, the SQLite index, and local workspace/model settings are
-  excluded from Git. Only placeholders and example configuration are tracked.
+  excluded from Git. Highlight sidecars, exported screenshots, recordings, application
+  bundles, and generated build files are also excluded. Only platform code,
+  developer documentation, placeholders, and example configuration are tracked.
 - The project assistant talks only to Ollama on the local loopback interface and
   retrieves evidence only from the selected project's managed Vault sources.
 - Online bibliographic enrichment is disabled by default. It can be enabled
@@ -79,3 +79,19 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## Desktop build
+
+Install Python 3.12, Node.js, Rust/Cargo, and the macOS command-line developer tools.
+Prepare the backend environment as described above, then build the desktop app:
+
+```bash
+cd frontend
+npm ci
+npm run desktop:build
+```
+
+The application bundle is generated in `frontend/src-tauri/target/release/bundle/macos/`.
+PDF decoder resources are packaged locally, so viewing scanned documents does not
+require an external CDN. Personal desktop data is stored separately from the app
+bundle and is never part of this repository.

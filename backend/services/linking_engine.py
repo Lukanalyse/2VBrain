@@ -132,6 +132,7 @@ class LinkingEngine:
         resolved = str(path.expanduser().resolve(strict=False))
         with _CACHE_LOCK:
             _TEXT_CACHE.pop(resolved, None)
+        self._objects_cache = None
         self._relation_cache = None
 
     def _objects(self) -> list[LinkableObject]:
@@ -152,6 +153,7 @@ class LinkingEngine:
             *paper_objects,
             *self._concept_objects(),
             *self._markdown_objects(LinkableType.project, "01 Projects", "Project"),
+            *self._standalone_note_objects(),
             *self._markdown_objects(LinkableType.brainstorm, "04 Brainstorm", "Brainstorm"),
             *self._markdown_objects(
                 LinkableType.review, "05 Literature Reviews", "Literature Review"
@@ -204,6 +206,7 @@ class LinkingEngine:
             if not notes_dir.is_dir():
                 continue
             for note_path in sorted(notes_dir.glob("*.md")):
+                content = self._read_text(note_path)
                 notes.append(
                     LinkableObject(
                         id=f"note:{parent_path.stem}::{note_path.stem}",
@@ -211,8 +214,28 @@ class LinkingEngine:
                         title=note_path.stem,
                         subtitle=parent.title,
                         markdown_path=str(note_path),
+                        color=self._frontmatter_value(content, "color") or None,
                     )
                 )
+        return notes
+
+    def _standalone_note_objects(self) -> list[LinkableObject]:
+        directory = self._vault_path() / "02 Notes"
+        if not directory.exists():
+            return []
+        notes: list[LinkableObject] = []
+        for path in sorted(directory.glob("*.md")):
+            content = self._read_text(path)
+            notes.append(
+                LinkableObject(
+                    id=f"note:{path.stem}",
+                    type=LinkableType.note,
+                    title=self._frontmatter_value(content, "title") or path.stem,
+                    subtitle="Note",
+                    markdown_path=str(path),
+                    color=self._frontmatter_value(content, "color") or "cyan",
+                )
+            )
         return notes
 
     def _paper_objects(self) -> list[LinkableObject]:
@@ -317,6 +340,20 @@ class LinkingEngine:
     def _normalize_link_label(self, label: str) -> str:
         return label.strip().lower()
 
+    @staticmethod
+    def _frontmatter_value(content: str, key: str) -> str:
+        if not content.startswith("---\n"):
+            return ""
+        end = content.find("\n---", 4)
+        if end == -1:
+            return ""
+        match = re.search(
+            rf"^{re.escape(key)}:\s*(.*?)\s*$",
+            content[4:end],
+            flags=re.MULTILINE,
+        )
+        return match.group(1).strip().strip('"') if match else ""
+
     def _search_match(
         self, item: LinkableObject, normalized_query: str
     ) -> tuple[int, str] | tuple[None, str]:
@@ -372,9 +409,17 @@ class LinkingEngine:
         incoming_by_id: dict[str, list[LinkableObject]] = {
             item.id: [] for item in objects
         }
+        object_by_id = {item.id: item for item in objects}
         for source in objects:
             content = self._read_text(Path(source.markdown_path))
             targets = self._linked_objects(content, object_by_label)
+            if source.type == LinkableType.note:
+                parent_id = self._frontmatter_value(content, "parent_id")
+                parent = object_by_id.get(parent_id)
+                if parent is not None and parent.id not in {
+                    target.id for target in targets
+                }:
+                    targets.append(parent)
             for target in targets:
                 if target.id == source.id:
                     continue

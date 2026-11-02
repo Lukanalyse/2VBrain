@@ -18,3 +18,13 @@ config/assistant.json
 library/**
 vault/**
 docker-data/
+
+output/
+tmp/
+**/*.pdf
+**/*.highlights.json
+**/*.sqlite*
+**/*.db*
+**/*.mp4
+**/*.mov
+**/*.app/

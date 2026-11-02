@@ -1,10 +1,13 @@
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from schemas.linking import LinkableObject
 
 
 class WorkspaceObjectCreate(BaseModel):
     title: str
+    color: str | None = None
 
 
 class WorkspaceObjectDetail(BaseModel):
@@ -111,6 +114,10 @@ class WorkspaceObjectResponse(BaseModel):
     object: LinkableObject
 
 
+class WorkspaceColorUpdate(BaseModel):
+    color: str
+
+
 class HomeSummary(BaseModel):
     continue_reading: list[LinkableObject]
     recent_papers: list[LinkableObject]
@@ -124,3 +131,22 @@ class ActiveWorkspaceSummary(BaseModel):
     writing: list[LinkableObject]
     projects: list[LinkableObject]
     brainstorms: list[LinkableObject]
+
+
+class PdfHighlightRect(BaseModel):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+
+
+class PdfHighlight(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    page: int = Field(ge=1)
+    color: Literal["yellow", "green", "blue", "pink", "violet"]
+    text: str = Field(max_length=50000)
+    rects: list[PdfHighlightRect] = Field(min_length=1, max_length=2000)
+
+
+class PdfHighlights(BaseModel):
+    highlights: list[PdfHighlight] = Field(default_factory=list, max_length=10000)

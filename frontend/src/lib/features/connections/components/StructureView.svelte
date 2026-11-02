@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ArrowDownLeft, ArrowUpRight, Link2 } from '@lucide/svelte';
 
+  import { noteColorHsl } from '$lib/design/noteColors';
   import { entityMeta } from '$lib/design/entities';
   import type { LinkableObject } from '$lib/features/linking/types/linking';
   import type {
@@ -82,6 +83,9 @@
                 {/if}
               </span>
               <span class="min-w-0">
+                {#if item.object.type === 'note'}
+                  <span class="inline-block h-2 w-2 rounded-full" style={`background: hsl(${noteColorHsl(item.object.color)})`} aria-hidden="true"></span>
+                {/if}
                 <span
                   class="block truncate text-sm font-medium text-foreground"
                 >

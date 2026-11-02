@@ -74,6 +74,7 @@ export function buildLocalGraph(
         id: node.id,
         type: node.type,
         title: node.title,
+        color: node.color,
         subtitle: '',
         markdown_path: ''
       }

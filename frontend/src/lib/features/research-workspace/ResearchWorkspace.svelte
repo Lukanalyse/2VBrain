@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import {
     ArrowLeft,
@@ -6,6 +7,8 @@
     Eye,
     ExternalLink,
     GripVertical,
+    Link2,
+    Palette,
     Pencil,
     Plus,
     Quote,
@@ -14,10 +17,11 @@
   } from '@lucide/svelte';
 
   import NeuralCore from '$lib/components/NeuralCore.svelte';
-  import { entityMeta, entityTypes } from '$lib/design/entities';
+  import { entityMeta } from '$lib/design/entities';
   import ObjectMenu from '$lib/components/ui/ObjectMenu.svelte';
   import TagBadges from '$lib/components/ui/TagBadges.svelte';
   import { assistantProjectUrl } from '$lib/features/assistant/services/assistantNavigation';
+  import { deleteConnection } from '$lib/features/connections/services/connectionsApi';
   import {
     readCitationFocus,
     type AssistantCitationFocus
@@ -27,6 +31,7 @@
     LinkableType
   } from '$lib/features/linking/types/linking';
   import { createLinks } from '$lib/features/linking/services/linkingApi';
+  import LinkPicker from '$lib/features/linking/components/LinkPicker.svelte';
   import ProjectDashboard from '$lib/features/workspace/components/ProjectDashboard.svelte';
   import MarkdownPanel from '$lib/features/workspace/panels/MarkdownPanel.svelte';
   import type { WorkspacePanelContext } from '$lib/features/workspace/types/panels';
@@ -42,25 +47,24 @@
     getActiveWorkspace,
     createBrainstorm,
     createProject,
-    createWorkspaceNote,
+    createStandaloneNote,
     saveWorkspaceMarkdown,
+    setObjectColor,
     updateWorkspaceStatus
   } from '$lib/features/workspace/services/workspaceApi';
   import type { ReadingStatus } from '$lib/features/workspace/services/workspaceApi';
   import MarkdownPreview from './MarkdownPreview.svelte';
+  import PdfReader from './PdfReader.svelte';
+  import { noteColors, noteColorHsl } from '$lib/design/noteColors';
 
   type Filter = 'all' | LinkableType;
   type SaveState = 'saved' | 'unsaved' | 'saving' | 'error';
-  type ViewerTab = 'pdf' | 'notes';
+  type ViewerTab = 'pdf' | 'notes' | 'split';
   type CreateKind = 'note' | 'brainstorm' | 'concept' | 'project';
 
-  const filters: Filter[] = ['all', ...entityTypes];
-  const createKinds: CreateKind[] = [
-    'note',
-    'brainstorm',
-    'concept',
-    'project'
-  ];
+  const filters: Filter[] = ['all', 'note', 'paper', 'project'];
+  const createKinds: CreateKind[] = ['note', 'project'];
+  const coreTypes = new Set<LinkableType>(['note', 'paper', 'project']);
   const readingStatuses: ReadingStatus[] = [
     'unread',
     'reading',
@@ -85,16 +89,31 @@
   let saveState = $state<SaveState>('saved');
   let detailLoading = $state(false);
   let viewerTab = $state<ViewerTab>('pdf');
+  let splitRatio = $state(50);
+  let splitView = $state<HTMLDivElement | null>(null);
+  let resizingSplit = $state(false);
+  let splitEditorObject = $state<LinkableObject | null>(null);
+  let splitEditorContent = $state('');
+  let splitEditorPrefix = $state('');
+  let splitEditorLastSaved = $state('');
+  let splitEditorSaveState = $state<SaveState>('saved');
+  let splitEditorLoading = $state(false);
   let currentReadingStatus = $state<ReadingStatus>('unread');
   let showPreview = $state(false);
   let pdfMessage = $state<string | null>(null);
   let handledRequest = $state<string | null>(null);
+  let handledCreateRequest = $state<string | null>(null);
   let citationFocus = $state<AssistantCitationFocus | null>(null);
   let showCreate = $state(false);
   let createKind = $state<CreateKind>('note');
   let createTitle = $state('');
+  let createColor = $state('cyan');
   let createBusy = $state(false);
   let createError = $state<string | null>(null);
+  let showConnections = $state(false);
+  let showColorPicker = $state(false);
+  let colorBusy = $state(false);
+  let connectionBusy = $state<string | null>(null);
   let focusEditorAfterOpen = $state(false);
   let createInput = $state<HTMLInputElement>();
 
@@ -102,12 +121,18 @@
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let saveTask: Promise<void> | null = null;
   let saveRequested = false;
+  let splitSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let splitSaveTask: Promise<void> | null = null;
+  let splitSaveRequested = false;
   let openController: AbortController | null = null;
   let listRequest = 0;
 
   const isPaper = $derived(selected?.type === 'paper');
   const relatedItems = $derived(detail?.all_related ?? []);
   const requestedObjectId = $derived($page.url.searchParams.get('open'));
+  const requestedCreateKind = $derived(
+    createKindFromQuery($page.url.searchParams.get('create'))
+  );
   const requestedCitationId = $derived($page.url.searchParams.get('citation'));
   const requestedAssistantProject = $derived(
     $page.url.searchParams.get('assistantProject')
@@ -146,11 +171,17 @@
   const selectedPdfUrl = $derived(
     selected ? getWorkspacePdfUrl(selected.id, focusedPdfPage) : ''
   );
-  const wordCount = $derived(
-    content.trim() ? content.trim().split(/\s+/).length : 0
+  const noteContextTitle = $derived(selected?.title);
+  const connectionTypes = $derived<LinkableType[]>(
+    selected?.type === 'note'
+      ? ['paper', 'project', 'note']
+      : selected?.type === 'paper'
+        ? ['project', 'note']
+        : ['paper', 'note']
   );
-  const noteContextTitle = $derived(
-    selected?.type === 'note' ? selected.subtitle : selected?.title
+  const connectedIds = $derived(relatedItems.map((item) => item.id));
+  const connectedNotes = $derived(
+    relatedItems.filter((item) => item.type === 'note')
   );
   const panelContext = $derived<WorkspacePanelContext | null>(
     selected && detail
@@ -191,6 +222,42 @@
   const editorContext = $derived(
     selected?.type !== 'project' ? panelContext : null
   );
+  const splitEditorContext = $derived<WorkspacePanelContext | null>(
+    splitEditorObject
+      ? {
+          object: splitEditorObject,
+          detail: null,
+          content: splitEditorContent,
+          saveState: splitEditorSaveState,
+          updateContent: updateSplitContent,
+          openObject,
+          updateReadingStatus: async () => {},
+          searchObjects: (value: string) => searchExplorer(value),
+          appendReadingNote: (text: string) => {
+            updateSplitContent(
+              splitEditorContent ? `${splitEditorContent}\n\n${text}` : text
+            );
+          },
+          createConceptFromSelection: async () => {},
+          createBrainstormFromSelection: async () => {},
+          createProjectFromSelection: async () => {},
+          createReviewFromSelection: async () => {},
+          linkSelectionToConcept: async () => {},
+          openPdf: async () => {},
+          createConceptFromTitle: async () => null,
+          createProjectFromTitle: async () => null,
+          createReviewFromTitle: async () => null,
+          createBrainstormFromTitle: async () => null,
+          linkObjectToTarget: async () => {},
+          refreshObject: async () => {
+            if (splitEditorObject) {
+              await selectSplitEditor(splitEditorObject.id, true);
+            }
+          }
+        }
+      : null
+  );
+  const activeSplitContext = $derived(splitEditorContext ?? editorContext);
 
   // Reload the list whenever the query or the type filter changes (debounced).
   $effect(() => {
@@ -219,6 +286,28 @@
     void openRequestedObject(objectId, sourceKind);
   });
 
+  $effect(() => {
+    const kind = requestedCreateKind;
+    if (!kind) {
+      handledCreateRequest = null;
+      return;
+    }
+    const contextId = selected?.id ?? requestedObjectId ?? '';
+    if (kind === 'note' && !selected) return;
+    const requestKey = `${kind}|${contextId}`;
+    if (handledCreateRequest === requestKey) return;
+    handledCreateRequest = requestKey;
+    openCreate(kind);
+
+    const url = new URL($page.url);
+    url.searchParams.delete('create');
+    void goto(`${url.pathname}${url.search}${url.hash}`, {
+      replaceState: true,
+      keepFocus: true,
+      noScroll: true
+    });
+  });
+
   async function loadList(
     q: string,
     filter: Filter,
@@ -238,6 +327,7 @@
           ...workspace.writing,
           ...workspace.brainstorms
         ].filter((object) => {
+          if (!coreTypes.has(object.type)) return false;
           if (seen.has(object.id)) return false;
           seen.add(object.id);
           return true;
@@ -291,6 +381,7 @@
     force = false
   ): Promise<void> {
     if (selected?.id === object.id && !force) return;
+    if (!(await flushSplitSave())) return;
     if (!(await flushSave())) return;
     openController?.abort();
     const controller = new AbortController();
@@ -300,6 +391,13 @@
     detail = null;
     detailLoading = true;
     pdfMessage = null;
+    showConnections = false;
+    showColorPicker = false;
+    splitEditorObject = null;
+    splitEditorContent = '';
+    splitEditorPrefix = '';
+    splitEditorLastSaved = '';
+    splitEditorSaveState = 'saved';
     viewerTab = object.type === 'paper' ? 'pdf' : 'notes';
     showPreview = false;
     try {
@@ -319,7 +417,9 @@
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
         listError =
-          error instanceof Error ? error.message : 'Unable to open this object.';
+          error instanceof Error
+            ? error.message
+            : 'Unable to open this object.';
       }
     } finally {
       if (openController === controller) detailLoading = false;
@@ -331,6 +431,57 @@
     saveState = 'unsaved';
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => void saveNow(), 700);
+  }
+
+  function updateSplitContent(value: string): void {
+    splitEditorContent = value;
+    splitEditorSaveState = 'unsaved';
+    if (splitSaveTimer) clearTimeout(splitSaveTimer);
+    splitSaveTimer = setTimeout(() => void saveSplitNow(), 700);
+  }
+
+  async function selectSplitEditor(
+    objectId: string,
+    force = false
+  ): Promise<void> {
+    if (!selected || selected.type !== 'paper') return;
+    const currentId = splitEditorObject?.id ?? selected.id;
+    if (currentId === objectId && !force) return;
+
+    if (splitEditorObject) {
+      if (!(await flushSplitSave())) return;
+    } else if (!(await flushSave())) {
+      return;
+    }
+
+    if (objectId === selected.id) {
+      splitEditorObject = null;
+      splitEditorContent = '';
+      splitEditorPrefix = '';
+      splitEditorLastSaved = '';
+      splitEditorSaveState = 'saved';
+      showPreview = false;
+      return;
+    }
+
+    const note = connectedNotes.find((item) => item.id === objectId);
+    if (!note) return;
+    splitEditorLoading = true;
+    showPreview = false;
+    try {
+      const markdown = await getWorkspaceMarkdown(note.id);
+      const editable = splitMarkdownDocument(markdown.content);
+      splitEditorObject = note;
+      splitEditorPrefix = editable.prefix;
+      splitEditorContent = editable.body;
+      splitEditorLastSaved = editable.body;
+      splitEditorSaveState = 'saved';
+    } catch (error) {
+      listError =
+        error instanceof Error ? error.message : 'Unable to open this note.';
+    } finally {
+      splitEditorLoading = false;
+    }
   }
 
   async function saveNow(): Promise<void> {
@@ -374,6 +525,51 @@
     return saveState !== 'error';
   }
 
+  async function saveSplitNow(): Promise<void> {
+    splitSaveRequested = true;
+    if (splitSaveTask) return splitSaveTask;
+    splitSaveTask = drainSplitSaves().finally(() => {
+      splitSaveTask = null;
+    });
+    return splitSaveTask;
+  }
+
+  async function drainSplitSaves(): Promise<void> {
+    while (splitSaveRequested) {
+      splitSaveRequested = false;
+      if (!splitEditorObject || splitEditorContent === splitEditorLastSaved) {
+        continue;
+      }
+      const target = splitEditorObject.id;
+      const snapshot = splitEditorContent;
+      const prefix = splitEditorPrefix;
+      splitEditorSaveState = 'saving';
+      try {
+        const saved = await saveWorkspaceMarkdown(
+          target,
+          `${prefix}${snapshot}`
+        );
+        if (splitEditorObject?.id !== target) continue;
+        const editable = splitMarkdownDocument(saved.content);
+        splitEditorPrefix = editable.prefix;
+        splitEditorLastSaved = editable.body;
+        splitEditorSaveState =
+          splitEditorContent === editable.body ? 'saved' : 'unsaved';
+      } catch {
+        splitEditorSaveState = 'error';
+        splitSaveRequested = false;
+        break;
+      }
+    }
+  }
+
+  async function flushSplitSave(): Promise<boolean> {
+    if (splitSaveTimer) clearTimeout(splitSaveTimer);
+    if (!splitEditorObject) return true;
+    await saveSplitNow();
+    return splitEditorSaveState !== 'error';
+  }
+
   function retrySave(): void {
     saveState = 'unsaved';
     void saveNow();
@@ -403,6 +599,15 @@
     return value === 'pdf' || value === 'markdown' ? value : null;
   }
 
+  function createKindFromQuery(value: string | null): CreateKind | null {
+    return value === 'note' ||
+      value === 'brainstorm' ||
+      value === 'concept' ||
+      value === 'project'
+      ? value
+      : null;
+  }
+
   function pageFromQuery(value: string | null): number | null {
     if (!value) return null;
     const parsed = Number.parseInt(value, 10);
@@ -423,14 +628,59 @@
     }
   }
 
+  function updateSplitRatio(event: PointerEvent): void {
+    if (!splitView) return;
+    const bounds = splitView.getBoundingClientRect();
+    const stacked = window.matchMedia('(max-width: 1100px)').matches;
+    const position = stacked
+      ? ((event.clientY - bounds.top) / bounds.height) * 100
+      : ((event.clientX - bounds.left) / bounds.width) * 100;
+    splitRatio = Math.min(75, Math.max(25, position));
+  }
+
+  function startSplitResize(event: PointerEvent): void {
+    resizingSplit = true;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    updateSplitRatio(event);
+  }
+
+  function continueSplitResize(event: PointerEvent): void {
+    if (resizingSplit) updateSplitRatio(event);
+  }
+
+  function stopSplitResize(event: PointerEvent): void {
+    resizingSplit = false;
+    const target = event.currentTarget as HTMLElement;
+    if (target.hasPointerCapture(event.pointerId)) {
+      target.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function resizeSplitWithKeyboard(event: KeyboardEvent): void {
+    const direction =
+      event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+        ? -1
+        : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+          ? 1
+          : 0;
+    if (!direction) return;
+    event.preventDefault();
+    splitRatio = Math.min(75, Math.max(25, splitRatio + direction * 5));
+  }
+
   function clearSelection(): void {
     void flushSave();
+    void flushSplitSave();
     openController?.abort();
     selected = null;
     detail = null;
     content = '';
     documentPrefix = '';
     lastSaved = '';
+    splitEditorObject = null;
+    splitEditorContent = '';
+    splitEditorPrefix = '';
+    splitEditorLastSaved = '';
   }
 
   function handleDeleted(objectId: string): void {
@@ -461,8 +711,8 @@
     };
   }
 
-  function markdownStem(path: string): string {
-    return (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, '');
+  function wordCountFor(markdown: string): number {
+    return markdown.trim() ? markdown.trim().split(/\s+/).length : 0;
   }
 
   function startObjectDrag(event: DragEvent, object: LinkableObject): void {
@@ -478,9 +728,7 @@
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
   }
 
-  function openCreate(
-    kind: CreateKind = selected ? 'note' : 'brainstorm'
-  ): void {
+  function openCreate(kind: CreateKind = 'note'): void {
     showCreate = true;
     createKind = kind;
     createTitle = '';
@@ -495,22 +743,9 @@
   }
 
   function selectCreateKind(kind: CreateKind): void {
-    if (kind === 'note' && !selected) return;
     createKind = kind;
     createError = null;
     requestAnimationFrame(() => createInput?.focus());
-  }
-
-  async function resolveNoteParent(): Promise<LinkableObject | null> {
-    if (!selected) return null;
-    if (selected.type !== 'note') return selected;
-    const parentTitle = selected.subtitle;
-    const candidates = await searchExplorer(parentTitle);
-    return (
-      candidates.find(
-        (item) => item.type !== 'note' && item.title === parentTitle
-      ) ?? null
-    );
   }
 
   async function createWriting(): Promise<void> {
@@ -522,18 +757,9 @@
     try {
       let createdObject: LinkableObject;
       if (createKind === 'note') {
-        const parent = await resolveNoteParent();
-        if (!parent) throw new Error('Select a thread before creating a note.');
-        const created = await createWorkspaceNote(parent.id, title);
-        createdObject = {
-          id: `note:${markdownStem(created.object.markdown_path)}::${created.note.id}`,
-          type: 'note',
-          title: created.note.title,
-          subtitle: created.object.title,
-          markdown_path: created.note.path
-        };
-        if (parent.type === 'project') {
-          await createLinks(parent.id, [createdObject.id]);
+        createdObject = (await createStandaloneNote(title, createColor)).object;
+        if (selected && coreTypes.has(selected.type)) {
+          await createLinks(createdObject.id, [selected.id]);
         }
       } else if (createKind === 'brainstorm') {
         createdObject = (await createBrainstorm(title)).object;
@@ -567,7 +793,127 @@
       createBusy = false;
     }
   }
+
+  function objectColorHsl(object: LinkableObject): string {
+    return object.type === 'note'
+      ? noteColorHsl(object.color)
+      : entityMeta[object.type].hslVar;
+  }
+
+  async function changeNoteColor(color: string): Promise<void> {
+    if (!selected || selected.type !== 'note' || colorBusy) return;
+    colorBusy = true;
+    try {
+      const response = await setObjectColor(selected.id, color);
+      selected = response.object;
+      showColorPicker = false;
+      await loadList(query, activeFilter, true);
+    } catch (error) {
+      listError =
+        error instanceof Error ? error.message : 'Unable to update note color.';
+    } finally {
+      colorBusy = false;
+    }
+  }
+
+  async function handleLinked(): Promise<void> {
+    if (!selected) return;
+    await openObject(selected, false, true);
+    await loadList(query, activeFilter, true);
+    showConnections = false;
+  }
+
+  function connectionIdFor(item: LinkableObject): string {
+    if (!selected || !detail) return '';
+    const isOutgoing = Object.values(detail.related).some((group) =>
+      group.some((candidate) => candidate.id === item.id)
+    );
+    return isOutgoing
+      ? `${selected.id}=>${item.id}`
+      : `${item.id}=>${selected.id}`;
+  }
+
+  async function removeConnection(item: LinkableObject): Promise<void> {
+    if (!selected || connectionBusy) return;
+    connectionBusy = item.id;
+    try {
+      await deleteConnection(connectionIdFor(item));
+      await openObject(selected, false, true);
+      await loadList(query, activeFilter, true);
+    } catch (error) {
+      listError =
+        error instanceof Error ? error.message : 'Unable to remove connection.';
+    } finally {
+      connectionBusy = null;
+    }
+  }
 </script>
+
+{#snippet writingSurface(
+  context: WorkspacePanelContext,
+  title: string,
+  objectId: string,
+  compact = false
+)}
+  {@const editorWordCount = wordCountFor(context.content)}
+  <div
+    class="flex shrink-0 items-center justify-between border-b border-border/90 bg-surface/50 px-5 py-1.5"
+  >
+    <span
+      class="inline-flex min-w-0 items-center gap-3 text-xs text-muted-foreground"
+    >
+      <span class="inline-flex items-center gap-2">
+        <Cpu size={12} class="text-accent" />
+        Writing surface
+      </span>
+      <span class="h-3 w-px bg-border"></span>
+      <span>{editorWordCount} {editorWordCount === 1 ? 'word' : 'words'}</span>
+    </span>
+    <button
+      type="button"
+      class="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+      onclick={() => (showPreview = !showPreview)}
+    >
+      {#if showPreview}
+        <Pencil size={13} /> Edit
+      {:else}
+        <Eye size={13} /> Preview
+      {/if}
+    </button>
+  </div>
+  {#if showPreview}
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <MarkdownPreview
+        content={context.content}
+        objectTitle={title}
+        compact
+        showMetadata={false}
+      />
+    </div>
+  {:else}
+    <div
+      class={[
+        'writing-stage min-h-0 flex-1 overflow-hidden',
+        compact ? 'p-2' : 'p-3 sm:p-5'
+      ]}
+    >
+      <div
+        class={[
+          'entity-writing-sheet h-full overflow-hidden border-x bg-surface/35 shadow-panel',
+          compact ? 'max-w-none' : 'mx-auto max-w-5xl'
+        ]}
+      >
+        {#key objectId}
+          <MarkdownPanel
+            {context}
+            autofocus={focusEditorAfterOpen}
+            placeholder={`Write in ${title}...`}
+          />
+        {/key}
+      </div>
+    </div>
+  {/if}
+{/snippet}
 
 <section class="workspace-grid h-full overflow-hidden bg-background">
   <!-- LEFT: focused list of objects explicitly kept in active work -->
@@ -600,7 +946,7 @@
             <span
               class="inline-flex items-center gap-2 text-xs font-semibold uppercase text-accent"
             >
-              <Plus size={13} /> New writing
+              <Plus size={13} /> New item
             </span>
             <button
               type="button"
@@ -621,12 +967,8 @@
                   'flex h-8 min-w-0 items-center gap-2 rounded-md border px-2 text-xs transition',
                   createKind === kind
                     ? `${entityMeta[kind].border} ${entityMeta[kind].tint} text-foreground`
-                    : 'border-border/80 bg-surface text-muted-foreground hover:text-foreground',
-                  kind === 'note' && !selected
-                    ? 'cursor-not-allowed opacity-40'
-                    : ''
+                    : 'border-border/80 bg-surface text-muted-foreground hover:text-foreground'
                 ]}
-                disabled={kind === 'note' && !selected}
                 aria-pressed={createKind === kind}
                 onclick={() => selectCreateKind(kind)}
               >
@@ -640,6 +982,28 @@
             <p class="mt-2 truncate text-[0.68rem] text-muted-foreground">
               Linked to <span class="text-foreground">{noteContextTitle}</span>
             </p>
+          {/if}
+
+          {#if createKind === 'note'}
+            <div class="mt-3">
+              <p class="text-[0.68rem] font-medium text-muted-foreground">
+                Color
+              </p>
+              <div class="mt-1.5 flex items-center gap-2">
+                {#each noteColors as color}
+                  <button
+                    type="button"
+                    class="note-color-option"
+                    class:note-color-option--active={createColor === color.id}
+                    style={`--note-swatch: ${color.hsl}`}
+                    aria-label={color.label}
+                    aria-pressed={createColor === color.id}
+                    title={color.label}
+                    onclick={() => (createColor = color.id)}
+                  ></button>
+                {/each}
+              </div>
+            </div>
           {/if}
 
           <div class="mt-2 flex gap-2">
@@ -673,7 +1037,7 @@
           class="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-md border border-accent/45 bg-accent/10 text-sm font-semibold text-accent transition hover:border-accent/70 hover:bg-accent/15"
           onclick={() => openCreate()}
         >
-          <Plus size={16} /> New writing
+          <Plus size={16} /> New note or project
         </button>
       {/if}
 
@@ -698,7 +1062,7 @@
         {/if}
       </label>
 
-      <div class="mt-3 grid grid-cols-3 gap-1">
+      <div class="mt-3 grid grid-cols-2 gap-1">
         {#each filters as filter}
           <button
             type="button"
@@ -748,10 +1112,14 @@
                     ? 'workspace-thread--active text-foreground'
                     : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
                 ]}
+                style={`--thread-entity: ${objectColorHsl(item)}`}
                 onclick={() => openObject(item)}
                 ondragstart={(event) => startObjectDrag(event, item)}
               >
-                <span class={`thread-icon ${entityMeta[item.type].text}`}>
+                <span
+                  class="thread-icon"
+                  style={`color: hsl(${objectColorHsl(item)})`}
+                >
                   <Icon size={14} />
                 </span>
                 <span class="min-w-0 flex-1">
@@ -761,9 +1129,11 @@
                   <span
                     class="mt-0.5 block truncate text-[0.66rem] text-muted-foreground"
                   >
-                    {entityMeta[item.type].label}{item.subtitle
-                      ? ` · ${item.subtitle}`
-                      : ''}
+                    <span
+                      style={item.type === 'note'
+                        ? `color: hsl(${objectColorHsl(item)})`
+                        : undefined}>{entityMeta[item.type].label}</span
+                    >{item.subtitle ? ` · ${item.subtitle}` : ''}
                   </span>
                 </span>
                 {#if selected?.type === 'project' && item.id !== selected.id}
@@ -783,7 +1153,15 @@
   </aside>
 
   <!-- RIGHT: adaptive viewer -->
-  <main class="workspace-viewer flex min-w-0 flex-col overflow-hidden">
+  <main
+    class={[
+      'workspace-viewer flex min-w-0 flex-col overflow-hidden border border-transparent',
+      selected ? 'ros-entity-context' : ''
+    ]}
+    style={selected
+      ? `--entity-context: ${objectColorHsl(selected)}`
+      : undefined}
+  >
     {#if !selected}
       <div class="flex flex-1 items-center justify-center p-6">
         <div class="flex max-w-sm flex-col items-center text-center">
@@ -802,24 +1180,30 @@
           <button
             type="button"
             class="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground"
-            onclick={() => openCreate('brainstorm')}
+            onclick={() => openCreate('note')}
           >
-            <Plus size={16} /> New writing
+            <Plus size={16} /> New note
           </button>
         </div>
       </div>
     {:else}
       {@const Icon = entityMeta[selected.type].icon}
       <header
-        class="workspace-document-header flex items-center gap-3 border-b border-border/90 bg-surface/60 px-5 py-3 shadow-panel"
+        class="workspace-document-header ros-entity-panel flex items-center gap-3 border-b bg-surface/60 px-5 py-3 shadow-panel"
       >
-        <span class={`document-node ${entityMeta[selected.type].text}`}>
+        <span
+          class="document-node"
+          style={`color: hsl(${objectColorHsl(selected)})`}
+        >
           <Icon size={17} />
         </span>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span
               class={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ${entityMeta[selected.type].badge}`}
+              style={selected.type === 'note'
+                ? `color: hsl(${objectColorHsl(selected)}); background: hsl(${objectColorHsl(selected)} / 0.1)`
+                : undefined}
             >
               {entityMeta[selected.type].label}
             </span>
@@ -857,13 +1241,57 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
+          {#if selected.type === 'note'}
+            <div class="relative">
+              <button
+                type="button"
+                class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 text-xs text-muted-foreground transition hover:text-foreground"
+                aria-label="Change note color"
+                aria-expanded={showColorPicker}
+                onclick={() => (showColorPicker = !showColorPicker)}
+              >
+                <span
+                  class="h-2.5 w-2.5 rounded-full"
+                  style={`background: hsl(${noteColorHsl(selected.color)})`}
+                ></span>
+                <Palette size={13} />
+              </button>
+              {#if showColorPicker}
+                <div
+                  class="absolute right-0 top-10 z-30 flex gap-2 rounded-md border border-border bg-background p-2 shadow-lg"
+                >
+                  {#each noteColors as color}
+                    <button
+                      type="button"
+                      class="note-color-option"
+                      class:note-color-option--active={selected.color ===
+                        color.id}
+                      style={`--note-swatch: ${color.hsl}`}
+                      aria-label={color.label}
+                      title={color.label}
+                      disabled={colorBusy}
+                      onclick={() => changeNoteColor(color.id)}
+                    ></button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+          <button
+            type="button"
+            class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 text-xs text-muted-foreground transition hover:border-accent/40 hover:text-foreground"
+            onclick={() => (showConnections = true)}
+          >
+            <Link2 size={13} />
+            <span class="hidden sm:inline">Connect</span>
+          </button>
           <button
             type="button"
             class="inline-flex h-8 items-center gap-1.5 rounded-md border border-entity-note/35 bg-entity-note/[0.08] px-2.5 text-xs text-entity-note transition hover:bg-entity-note/15"
-            aria-label="Create note for current thread"
+            aria-label="Create a linked note"
             onclick={() => openCreate('note')}
           >
-            <Plus size={13} /> <span class="hidden sm:inline">Note</span>
+            <Plus size={13} /> <span class="hidden sm:inline">New note</span>
           </button>
           {#if isPaper}
             <select
@@ -905,7 +1333,7 @@
             class={[
               'rounded-md px-3 py-1 text-sm transition',
               viewerTab === 'pdf'
-                ? 'bg-accent/10 text-foreground'
+                ? 'entity-tab--active text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             ]}
             onclick={() => (viewerTab = 'pdf')}
@@ -917,12 +1345,24 @@
             class={[
               'rounded-md px-3 py-1 text-sm transition',
               viewerTab === 'notes'
-                ? 'bg-accent/10 text-foreground'
+                ? 'entity-tab--active text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             ]}
             onclick={() => (viewerTab = 'notes')}
           >
-            Notes
+            Reading note
+          </button>
+          <button
+            type="button"
+            class={[
+              'rounded-md px-3 py-1 text-sm transition',
+              viewerTab === 'split'
+                ? 'entity-tab--active text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            ]}
+            onclick={() => (viewerTab = 'split')}
+          >
+            PDF + note
           </button>
         </div>
       {/if}
@@ -982,87 +1422,124 @@
           <p class="p-5 text-sm text-muted-foreground">Loading...</p>
         {:else if isPaper && viewerTab === 'pdf'}
           {#key selectedPdfUrl}
-            <iframe
-              title={selected.title}
-              src={selectedPdfUrl}
-              class="min-h-0 flex-1 border-0 bg-muted/10"
-            ></iframe>
+            <PdfReader objectId={selected.id} title={selected.title} url={selectedPdfUrl} />
           {/key}
+        {:else if isPaper && viewerTab === 'split' && editorContext}
+          <div
+            bind:this={splitView}
+            class="workspace-split min-h-0 flex-1 overflow-hidden"
+            class:is-resizing={resizingSplit}
+            style={`--split-position: ${splitRatio}%`}
+          >
+            <section
+              class="split-pane min-h-0 overflow-hidden"
+              aria-label="PDF"
+            >
+              {#key selectedPdfUrl}
+                <PdfReader objectId={selected.id} title={selected.title} url={selectedPdfUrl} />
+              {/key}
+            </section>
+            <button
+              type="button"
+              class="split-divider"
+              aria-label={`Resize PDF and notes panels, PDF ${Math.round(splitRatio)} percent`}
+              onpointerdown={startSplitResize}
+              onpointermove={continueSplitResize}
+              onpointerup={stopSplitResize}
+              onpointercancel={stopSplitResize}
+              onkeydown={resizeSplitWithKeyboard}
+            >
+              <span aria-hidden="true"></span>
+            </button>
+            <section
+              class="split-pane flex min-h-0 min-w-0 flex-col overflow-hidden"
+              aria-label="Notes"
+            >
+              <div
+                class="flex shrink-0 items-center justify-between gap-3 border-b border-border/90 bg-surface/70 px-4 py-2"
+              >
+                <label
+                  class="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground"
+                >
+                  <span class="shrink-0">Write in</span>
+                  <select
+                    class="h-8 min-w-0 max-w-72 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent/55"
+                    value={splitEditorObject?.id ?? selected.id}
+                    disabled={splitEditorLoading}
+                    onchange={(event) =>
+                      selectSplitEditor(event.currentTarget.value)}
+                  >
+                    <option value={selected.id}>Reading note (PDF)</option>
+                    {#each connectedNotes as note (note.id)}
+                      <option value={note.id}>{note.title}</option>
+                    {/each}
+                  </select>
+                </label>
+                <span class="shrink-0 text-[0.68rem] text-muted-foreground">
+                  {splitEditorObject
+                    ? splitEditorSaveState === 'saving'
+                      ? 'Saving...'
+                      : splitEditorSaveState === 'error'
+                        ? 'Save failed'
+                        : 'Saved'
+                    : saveState === 'saving'
+                      ? 'Saving...'
+                      : saveState === 'error'
+                        ? 'Save failed'
+                        : 'Saved'}
+                </span>
+              </div>
+              {#if splitEditorLoading}
+                <p class="p-5 text-sm text-muted-foreground">Opening note...</p>
+              {:else if activeSplitContext}
+                {@render writingSurface(
+                  activeSplitContext,
+                  splitEditorObject?.title ?? selected.title,
+                  splitEditorObject?.id ?? selected.id,
+                  true
+                )}
+              {/if}
+            </section>
+          </div>
         {:else if projectContext}
           <ProjectDashboard context={projectContext} />
         {:else if editorContext}
           <!-- Markdown editor / preview (notes, ideas, projects, concepts) -->
-          <div
-            class="flex items-center justify-between border-b border-border/90 bg-surface/50 px-5 py-1.5"
-          >
-            <span
-              class="inline-flex min-w-0 items-center gap-3 text-xs text-muted-foreground"
-            >
-              <span class="inline-flex items-center gap-2">
-                <Cpu size={12} class="text-accent" />
-                Writing surface
-              </span>
-              <span class="h-3 w-px bg-border"></span>
-              <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
-            </span>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
-                onclick={() => (showPreview = !showPreview)}
-              >
-                {#if showPreview}
-                  <Pencil size={13} /> Edit
-                {:else}
-                  <Eye size={13} /> Preview
-                {/if}
-              </button>
-            </div>
-          </div>
-          {#if showPreview}
-            <div class="min-h-0 flex-1 overflow-y-auto">
-              <MarkdownPreview
-                {content}
-                objectTitle={selected.title}
-                compact
-                showMetadata={false}
-              />
-            </div>
-          {:else}
-            <div
-              class="writing-stage min-h-0 flex-1 overflow-hidden p-3 sm:p-5"
-            >
-              <div
-                class="mx-auto h-full max-w-5xl overflow-hidden border-x border-border/80 bg-surface/35 shadow-panel"
-              >
-                {#key selected.id}
-                  <MarkdownPanel
-                    context={editorContext}
-                    autofocus={focusEditorAfterOpen}
-                    placeholder={`Write in ${selected.title}...`}
-                  />
-                {/key}
-              </div>
-            </div>
-          {/if}
+          {@render writingSurface(editorContext, selected.title, selected.id)}
         {/if}
 
         {#if detail && (relatedItems.length || (detail.tags?.length ?? 0))}
-          <footer class="border-t border-border px-5 py-3">
+          <footer class="entity-footer border-t px-5 py-3">
             <TagBadges tags={detail.tags} />
             {#if relatedItems.length}
               <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                <span class="text-xs text-muted-foreground">Related:</span>
+                <span class="text-xs text-muted-foreground">Connections:</span>
                 {#each relatedItems.slice(0, 8) as related (related.id)}
                   {@const RelIcon = entityMeta[related.type].icon}
-                  <button
-                    type="button"
-                    class="inline-flex items-center gap-1 rounded-md border border-border bg-muted/15 px-2 py-0.5 text-xs text-muted-foreground transition hover:text-foreground"
-                    onclick={() => openObject(related)}
+                  <span
+                    class={`inline-flex items-center rounded-md border text-xs text-muted-foreground ${entityMeta[related.type].border} ${entityMeta[related.type].tint}`}
                   >
-                    <RelIcon size={11} class={entityMeta[related.type].text} />
-                    <span class="max-w-40 truncate">{related.title}</span>
-                  </button>
+                    <button
+                      type="button"
+                      class="inline-flex min-w-0 items-center gap-1 px-2 py-0.5 transition hover:text-foreground"
+                      onclick={() => openObject(related)}
+                    >
+                      <RelIcon
+                        size={11}
+                        class={entityMeta[related.type].text}
+                      />
+                      <span class="max-w-40 truncate">{related.title}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="border-l border-border/60 px-1.5 py-0.5 transition hover:text-entity-review disabled:opacity-40"
+                      aria-label={`Remove connection to ${related.title}`}
+                      disabled={connectionBusy === related.id}
+                      onclick={() => removeConnection(related)}
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
                 {/each}
               </div>
             {/if}
@@ -1071,6 +1548,49 @@
       </div>
     {/if}
   </main>
+
+  {#if showConnections && selected}
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        class="absolute inset-0 bg-black/60"
+        aria-label="Close connections"
+        onclick={() => (showConnections = false)}
+      ></button>
+      <div
+        class="relative z-10 max-h-[85vh] w-full max-w-xl overflow-auto rounded-lg border border-border bg-background p-5 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connect-title"
+      >
+        <div class="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-medium uppercase text-accent">Connect</p>
+            <h2 id="connect-title" class="mt-1 text-lg font-semibold">
+              {selected.title}
+            </h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Link this item to a note, paper or project.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="ros-btn-icon"
+            aria-label="Close connections"
+            onclick={() => (showConnections = false)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <LinkPicker
+          sourceId={selected.id}
+          allowedTypes={connectionTypes}
+          excludeIds={connectedIds}
+          on:linked={handleLinked}
+        />
+      </div>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -1159,8 +1679,9 @@
   }
 
   .workspace-thread--active {
-    border-color: hsl(var(--accent) / 0.35);
-    background: hsl(var(--accent) / 0.11);
+    border-color: hsl(var(--thread-entity) / 0.42);
+    background: hsl(var(--thread-entity) / 0.1);
+    box-shadow: inset 2px 0 0 hsl(var(--thread-entity) / 0.72);
   }
 
   .thread-icon {
@@ -1169,23 +1690,34 @@
     width: 28px;
     height: 28px;
     background: hsl(var(--surface));
+    border-color: hsl(var(--thread-entity) / 0.28);
   }
 
   .thread-port {
     width: 6px;
     height: 6px;
     margin-top: 11px;
-    border: 1px solid hsl(var(--accent) / 0.5);
+    border: 1px solid hsl(var(--thread-entity) / 0.5);
     background: hsl(var(--background));
   }
 
   .workspace-thread--active .thread-port {
-    background: hsl(var(--accent));
-    box-shadow: 0 0 8px hsl(var(--accent) / 0.55);
+    background: hsl(var(--thread-entity));
+    box-shadow: 0 0 8px hsl(var(--thread-entity) / 0.55);
   }
 
   .workspace-viewer {
     background: hsl(var(--background) / 0.93);
+  }
+
+  .workspace-viewer.ros-entity-context {
+    background:
+      linear-gradient(
+        135deg,
+        hsl(var(--entity-context) / 0.045),
+        transparent 25%
+      ),
+      hsl(var(--background) / 0.96);
   }
 
   .workspace-document-header {
@@ -1200,12 +1732,112 @@
     left: 0;
     width: 23%;
     height: 1px;
-    background: hsl(var(--accent) / 0.65);
+    background: linear-gradient(
+      90deg,
+      hsl(var(--entity-context) / 0.85),
+      hsl(var(--entity-context) / 0.16),
+      transparent
+    );
   }
 
   .document-node {
     width: 36px;
     height: 36px;
+    border-color: hsl(var(--entity-context) / 0.45);
+    background: hsl(var(--entity-context) / 0.08);
+    box-shadow: inset 0 0 12px hsl(var(--entity-context) / 0.06);
+  }
+
+  .entity-tab--active {
+    border: 1px solid hsl(var(--entity-context) / 0.32);
+    background: hsl(var(--entity-context) / 0.11);
+  }
+
+  .workspace-split {
+    display: grid;
+    grid-template-columns:
+      minmax(0, var(--split-position)) 8px
+      minmax(0, 1fr);
+  }
+
+  .split-pane {
+    background: hsl(var(--background) / 0.94);
+  }
+
+  .split-divider {
+    position: relative;
+    z-index: 2;
+    cursor: col-resize;
+    touch-action: none;
+    border: 0;
+    padding: 0;
+    background: hsl(var(--border) / 0.75);
+    outline: none;
+    transition: background-color 120ms ease;
+  }
+
+  .split-divider::before {
+    content: '';
+    position: absolute;
+    inset: 0 -3px;
+  }
+
+  .split-divider span {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 42px;
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.55);
+    transform: translate(-50%, -50%);
+  }
+
+  .split-divider:hover,
+  .split-divider:focus-visible,
+  .is-resizing .split-divider {
+    background: hsl(var(--accent) / 0.5);
+  }
+
+  .is-resizing {
+    user-select: none;
+  }
+
+  .entity-writing-sheet {
+    border-color: hsl(var(--entity-context) / 0.3);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--entity-context) / 0.08),
+      0 12px 36px hsl(210 20% 2% / 0.18);
+  }
+
+  .entity-footer {
+    border-color: hsl(var(--entity-context) / 0.28);
+    background: hsl(var(--entity-context) / 0.025);
+  }
+
+  .note-color-option {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    border: 2px solid hsl(var(--background));
+    border-radius: 999px;
+    background: hsl(var(--note-swatch));
+    box-shadow: 0 0 0 1px hsl(var(--border));
+    transition:
+      transform 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .note-color-option:hover,
+  .note-color-option:focus-visible {
+    transform: scale(1.12);
+    outline: none;
+  }
+
+  .note-color-option--active {
+    box-shadow:
+      0 0 0 2px hsl(var(--background)),
+      0 0 0 4px hsl(var(--note-swatch));
   }
 
   .quick-create {
@@ -1224,6 +1856,24 @@
         transparent 100%
       ),
       hsl(var(--background) / 0.88);
+  }
+
+  @media (max-width: 1100px) {
+    .workspace-split {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows:
+        minmax(220px, var(--split-position)) 8px
+        minmax(280px, 1fr);
+    }
+
+    .split-divider {
+      cursor: row-resize;
+    }
+
+    .split-divider span {
+      width: 42px;
+      height: 2px;
+    }
   }
 
   @media (max-width: 820px) {

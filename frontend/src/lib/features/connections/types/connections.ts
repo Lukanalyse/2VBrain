@@ -46,6 +46,7 @@ export type ConnectionGraphNode = {
   id: string;
   type: LinkableType;
   title: string;
+  color?: string | null;
 };
 
 export type ConnectionGraphEdge = {

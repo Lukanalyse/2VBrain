@@ -53,6 +53,7 @@ class ConnectionGraphNode(BaseModel):
     id: str
     type: str
     title: str
+    color: str | None = None
 
 
 class ConnectionGraphEdge(BaseModel):

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Cpu, Minus, Plus, RotateCcw, ZoomIn, ZoomOut } from '@lucide/svelte';
 
+  import { noteColorHsl } from '$lib/design/noteColors';
   import { entityMeta } from '$lib/design/entities';
   import type { LinkableObject } from '$lib/features/linking/types/linking';
   import type {
@@ -243,6 +244,7 @@
 
         {#each positionedNodes as node}
           {@const meta = entityMeta[node.type]}
+          {@const nodeColor = node.type === 'note' ? `hsl(${noteColorHsl(node.color)})` : meta.colorVar}
           {@const isCurrent = node.id === current.id || node.depth === 0}
           <g
             role="button"
@@ -273,7 +275,7 @@
               rx="8"
               class="node-body"
               fill="hsl(var(--surface))"
-              stroke={meta.colorVar}
+              stroke={nodeColor}
               stroke-width={isCurrent ? '2.5' : '1.5'}
               filter={isCurrent ? 'url(#core-glow)' : undefined}
             ></rect>
@@ -283,9 +285,9 @@
               width={node.width - 14}
               height={node.height - 14}
               rx="5"
-              fill={meta.colorVar}
+              fill={nodeColor}
               fill-opacity={isCurrent ? '0.11' : '0.065'}
-              stroke={meta.colorVar}
+              stroke={nodeColor}
               stroke-opacity="0.24"
             ></rect>
             <rect
@@ -293,13 +295,13 @@
               y={-node.height / 2 + 11}
               width="5"
               height="5"
-              fill={meta.colorVar}
+              fill={nodeColor}
               class="node-status-light"
             ></rect>
             <text
               y={isCurrent ? -19 : -12}
               text-anchor="middle"
-              fill={meta.colorVar}
+              fill={nodeColor}
               class="node-type"
             >
               {isCurrent ? `CORE · ${node.type}` : node.type}

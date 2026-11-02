@@ -46,3 +46,17 @@ config/assistant.json
 
 # Local Codex generation artifacts
 .codex-pet-runs/
+
+# Personal research artifacts and local exports
+/output/
+/tmp/
+*.pdf
+*.highlights.json
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+*.db-*
+*.mp4
+*.mov
+*.app/

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ExternalLink, Trash2 } from '@lucide/svelte';
 
+  import { noteColorHsl } from '$lib/design/noteColors';
   import { entityMeta } from '$lib/design/entities';
   import type { LinkableObject } from '$lib/features/linking/types/linking';
   import type {
@@ -43,7 +44,7 @@
       <div
         class="selected-node flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/20"
       >
-        <meta.icon size={18} class={meta.text} />
+        <meta.icon size={18} class={meta.text} style={object.type === 'note' ? `color: hsl(${noteColorHsl(object.color)})` : undefined} />
       </div>
       <div class="min-w-0">
         <p class="text-xs font-medium uppercase text-accent">

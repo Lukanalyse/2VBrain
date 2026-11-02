@@ -75,3 +75,25 @@ def test_research_explorer_returns_detail_and_related_objects(tmp_path: Path) ->
     assert detail.tags == ["explorer"]
     assert [item.title for item in detail.related["paper"]] == ["Explorer Paper"]
     assert [item.title for item in detail.all_related] == ["Explorer Paper"]
+
+
+def test_paper_detail_includes_child_note_after_catalog_reload(tmp_path: Path) -> None:
+    explorer, library_manager, _, _ = make_explorer(tmp_path)
+    paper = library_manager.import_pdf(make_pdf("Persistent Paper.pdf"))
+    markdown_path = Path(paper.markdown_path)
+    notes_dir = markdown_path.parent / f"{markdown_path.stem}.notes"
+    notes_dir.mkdir()
+    (notes_dir / "DATA.md").write_text(
+        "---\n"
+        "title: DATA\n"
+        f"parent_id: paper:{paper.id}\n"
+        "color: rose\n"
+        "---\n\n"
+        "# DATA\n",
+        encoding="utf-8",
+    )
+
+    detail = explorer.get_detail(f"paper:{paper.id}")
+
+    assert [item.title for item in detail.backlinks["note"]] == ["DATA"]
+    assert [item.title for item in detail.all_related] == ["DATA"]

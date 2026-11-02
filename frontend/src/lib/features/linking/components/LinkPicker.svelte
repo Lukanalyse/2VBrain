@@ -97,9 +97,9 @@
     class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
   >
     <div>
-      <h3 class="text-sm font-semibold text-foreground">Link Object</h3>
+      <h3 class="text-sm font-semibold text-foreground">Add connection</h3>
       <p class="mt-1 text-xs text-muted-foreground">
-        Search any indexed knowledge object.
+        Choose one or more existing items.
       </p>
     </div>
     <button
@@ -120,7 +120,7 @@
     <input
       bind:value={query}
       class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
-      placeholder="Search papers, concepts, projects, brainstorm notes, reviews"
+      placeholder="Search notes, papers or projects"
     />
   </label>
 

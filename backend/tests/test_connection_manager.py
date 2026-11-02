@@ -84,3 +84,25 @@ def test_connection_manager_creates_lists_deletes_and_exports_graph_data(tmp_pat
 
     manager.delete_connection(connection.id)
     assert manager.list_connections(f"paper:{paper.id}").outgoing == []
+
+
+def test_graph_preserves_individual_note_colors(tmp_path: Path) -> None:
+    from services.workspace_manager import WorkspaceManager
+
+    manager, _, concepts = make_manager(tmp_path)
+    linking = manager._linking_engine
+    workspace = WorkspaceManager(
+        vault_manager=linking._vault_manager,
+        library_repository=linking._library_repository,
+        concept_manager=concepts,
+        linking_engine=linking,
+    )
+    first = workspace.create_note("Data", "rose")
+    second = workspace.create_note("Method", "teal")
+    manager.create_connection(source_id=first.id, target_id=second.id,
+                              relation_type=ConnectionType.related)
+    assert {node.id: node.color for node in manager.graph_data().nodes} == {
+        first.id: "rose", second.id: "teal"
+    }
+    workspace.set_object_color(first.id, "violet")
+    assert {node.id: node.color for node in manager.graph_data().nodes}[first.id] == "violet"

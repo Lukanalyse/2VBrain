@@ -25,6 +25,7 @@
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "katex": "^0.17.0",
+    "pdfjs-dist": "^6.5.438",
     "svelte": "^5.33.0",
     "svelte-dnd-action": "^0.9.52",
     "tailwind-merge": "^2.4.0",

@@ -9,6 +9,7 @@
   } from '@lucide/svelte';
   import { onDestroy, onMount } from 'svelte';
 
+  import { noteColorHsl } from '$lib/design/noteColors';
   import { entityMeta } from '$lib/design/entities';
   import ConnectionsDetailsPanel from '$lib/features/connections/components/ConnectionsDetailsPanel.svelte';
   import ConnectionsFilters from '$lib/features/connections/components/ConnectionsFilters.svelte';
@@ -241,8 +242,8 @@
         ...graphData.nodes.filter(
           (node) => node.id !== source.id && node.id !== target.id
         ),
-        { id: source.id, type: source.type, title: source.title },
-        { id: target.id, type: target.type, title: target.title }
+        { id: source.id, type: source.type, title: source.title, color: source.color },
+        { id: target.id, type: target.type, title: target.title, color: target.color }
       ],
       edges: [
         ...graphData.edges,
@@ -372,7 +373,7 @@
             type="button"
             onclick={() => selectObject(object)}
           >
-            <meta.icon size={15} class={meta.text} />
+            <meta.icon size={15} class={meta.text} style={object.type === 'note' ? `color: hsl(${noteColorHsl(object.color)})` : undefined} />
             <span class="min-w-0">
               <span class="block truncate text-sm font-medium">
                 {object.title}

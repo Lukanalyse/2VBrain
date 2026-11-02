@@ -1,10 +1,5 @@
 export type LinkableType =
-  | 'paper'
-  | 'concept'
-  | 'project'
-  | 'brainstorm'
-  | 'review'
-  | 'note';
+  'paper' | 'concept' | 'project' | 'brainstorm' | 'review' | 'note';
 
 export type LinkableObject = {
   id: string;
@@ -15,6 +10,7 @@ export type LinkableObject = {
   search_excerpt?: string;
   collection_status?: 'inbox' | 'workspace' | 'library' | null;
   project_id?: string | null;
+  color?: string | null;
 };
 
 export type ObjectRelations = {

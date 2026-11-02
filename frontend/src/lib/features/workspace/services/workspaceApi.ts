@@ -112,7 +112,9 @@ export function getHomeSummary(): Promise<HomeSummary> {
   );
 }
 
-export function getActiveWorkspace(force = false): Promise<ActiveWorkspaceSummary> {
+export function getActiveWorkspace(
+  force = false
+): Promise<ActiveWorkspaceSummary> {
   if (force) invalidateQueries('workspace:active');
   return cachedQuery(
     'workspace:active',
@@ -228,11 +230,20 @@ export function deleteWorkspaceNote(
 
 export function getWorkspacePdfUrl(
   objectId: string,
-  pageNumber?: number | null
+  pageNumber?: number | null,
+  zoomPercent?: number | null
 ): string {
   const url = `${API_BASE_URL}/workspace/objects/${encodeURIComponent(objectId)}/pdf`;
-  if (!pageNumber) return url;
-  return `${url}#page=${Math.max(1, Math.floor(pageNumber))}`;
+  const fragment = new URLSearchParams();
+  if (pageNumber)
+    fragment.set('page', String(Math.max(1, Math.floor(pageNumber))));
+  if (zoomPercent) {
+    fragment.set(
+      'zoom',
+      String(Math.max(50, Math.min(250, Math.floor(zoomPercent))))
+    );
+  }
+  return fragment.size ? `${url}#${fragment.toString()}` : url;
 }
 
 export function openWorkspacePdf(
@@ -327,6 +338,29 @@ export function duplicateObject(
   return request<{ object: LinkableObject }>(
     `/workspace/objects/${encodeURIComponent(objectId)}/duplicate`,
     { method: 'POST', body: JSON.stringify({}) }
+  );
+}
+
+export function createStandaloneNote(
+  title: string,
+  color: string
+): Promise<{ object: LinkableObject }> {
+  return request<{ object: LinkableObject }>('/workspace/notes', {
+    method: 'POST',
+    body: JSON.stringify({ title, color })
+  });
+}
+
+export function setObjectColor(
+  objectId: string,
+  color: string
+): Promise<{ object: LinkableObject }> {
+  return request<{ object: LinkableObject }>(
+    `/workspace/objects/${encodeURIComponent(objectId)}/color`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ color })
+    }
   );
 }
 

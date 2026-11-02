@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import NeuralCore from '$lib/components/NeuralCore.svelte';
   import ObjectMenu from '$lib/components/ui/ObjectMenu.svelte';
+  import { noteColorHsl } from '$lib/design/noteColors';
   import { entityMeta, entityTypes } from '$lib/design/entities';
   import type {
     LinkableObject,
@@ -61,8 +62,7 @@
       .map((type) => ({
         type,
         meta: entityMeta[type],
-        items: visibleObjects
-          .filter((object) => object.type === type)
+        items: visibleObjects.filter((object) => object.type === type)
       }))
       .filter((group) => group.items.length > 0)
   );
@@ -121,7 +121,9 @@
     </button>
     <span class="index-count shrink-0 text-xs text-muted-foreground">
       <span class="h-1.5 w-1.5 bg-accent"></span>
-      {visibleObjects.length === total ? total : `${visibleObjects.length}/${total}`} objects
+      {visibleObjects.length === total
+        ? total
+        : `${visibleObjects.length}/${total}`} objects
     </span>
   </div>
 
@@ -132,7 +134,9 @@
       {/each}
     </div>
   {:else if !groups.length}
-    <div class="index-empty mt-3 flex flex-col items-center justify-center px-6 py-10 text-center">
+    <div
+      class="index-empty mt-3 flex flex-col items-center justify-center px-6 py-10 text-center"
+    >
       <NeuralCore
         compact
         label="Memory Bank"
@@ -165,21 +169,25 @@
             <span class={`text-sm font-semibold ${group.meta.text}`}>
               {group.meta.plural}
             </span>
-            <span class="ml-auto text-xs text-muted-foreground">{group.items.length}</span>
+            <span class="ml-auto text-xs text-muted-foreground"
+              >{group.items.length}</span
+            >
           </button>
 
           {#if !isCollapsed(group.type)}
             <div class="index-items grid">
               {#each group.items as object (object.id)}
+                {@const rowColor = object.type === 'note' ? noteColorHsl(object.color) : group.meta.hslVar}
                 <div
-                  class={`index-row group flex items-center gap-2 border-l-2 ${group.meta.borderLeft} pl-3 pr-1 transition hover:bg-muted/20`}
+                  class={`index-row group flex items-center gap-2 border-y border-r border-l-2 border-y-transparent border-r-transparent ${group.meta.borderLeft} pl-3 pr-1 transition hover:bg-muted/20`}
+                  style={`--row-entity: ${rowColor}; border-left-color: hsl(${rowColor})`}
                 >
                   <button
                     class="flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
                     type="button"
                     onclick={() => open(object)}
                   >
-                    <Icon size={14} class={`shrink-0 ${group.meta.text}`} />
+                    <Icon size={14} class="shrink-0" style={`color: hsl(${rowColor})`} />
                     <span class="min-w-0 flex-1">
                       <span class="block truncate text-sm text-foreground"
                         >{object.title}</span
@@ -282,5 +290,11 @@
 
   .index-row + .index-row {
     border-top: 1px solid hsl(var(--border) / 0.65);
+  }
+
+  .index-row:hover,
+  .index-row:focus-within {
+    border-color: hsl(var(--row-entity) / 0.34);
+    background: hsl(var(--row-entity) / 0.055);
   }
 </style>

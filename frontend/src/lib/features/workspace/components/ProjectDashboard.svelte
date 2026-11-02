@@ -36,7 +36,7 @@
   import MarkdownPanel from '$lib/features/workspace/panels/MarkdownPanel.svelte';
   import {
     createBrainstorm,
-    createWorkspaceNote,
+    createStandaloneNote,
     listWorkspaceNotes,
     setWorkspaceProject,
     type WorkspaceNote
@@ -143,10 +143,6 @@
     );
   }
 
-  function markdownStem(path: string): string {
-    return (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, '');
-  }
-
   function intakeLabel(filter: IntakeFilter): string {
     return filter === 'all' ? 'All' : entityMeta[filter].plural;
   }
@@ -225,14 +221,7 @@
     try {
       let createdObject: LinkableObject;
       if (createKind === 'note') {
-        const created = await createWorkspaceNote(context.object.id, title);
-        createdObject = {
-          id: `note:${markdownStem(created.object.markdown_path)}::${created.note.id}`,
-          type: 'note',
-          title: created.note.title,
-          subtitle: created.object.title,
-          markdown_path: created.note.path
-        };
+        createdObject = (await createStandaloneNote(title, 'cyan')).object;
       } else if (createKind === 'brainstorm') {
         createdObject = (await createBrainstorm(title)).object;
       } else {

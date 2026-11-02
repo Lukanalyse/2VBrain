@@ -123,7 +123,7 @@ class ConnectionManager:
             for object_id in (edge.source_id, edge.target_id)
         }
         nodes = [
-            ConnectionGraphNode(id=item.id, type=item.type.value, title=item.title)
+            ConnectionGraphNode(id=item.id, type=item.type.value, title=item.title, color=item.color)
             for item in sorted(
                 (object_by_id[object_id] for object_id in connected_ids if object_id in object_by_id),
                 key=lambda entry: (entry.type.value, entry.title.lower()),

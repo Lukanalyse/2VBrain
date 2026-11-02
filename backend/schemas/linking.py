@@ -21,6 +21,7 @@ class LinkableObject(BaseModel):
     search_excerpt: str = ""
     collection_status: str | None = None
     project_id: str | None = None
+    color: str | None = None
 
 
 class LinkSearchResponse(BaseModel):

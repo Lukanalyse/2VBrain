@@ -11,8 +11,10 @@ from repositories.library_repository import LibraryRepository
 from schemas.workspace import (
     ActiveWorkspaceSummary,
     HomeSummary,
+    PdfHighlights,
     WorkspaceCollectionResponse,
     WorkspaceCollectionUpdate,
+    WorkspaceColorUpdate,
     WorkspaceMarkdownDocument,
     WorkspaceMarkdownUpdate,
     WorkspaceNoteCreate,
@@ -22,12 +24,12 @@ from schemas.workspace import (
     WorkspaceObjectCreate,
     WorkspaceObjectDetail,
     WorkspaceObjectList,
+    WorkspaceObjectResponse,
     WorkspaceProjectResponse,
     WorkspaceProjectUpdate,
+    WorkspaceRenameUpdate,
     WorkspaceResearchMetadataResponse,
     WorkspaceResearchMetadataUpdate,
-    WorkspaceObjectResponse,
-    WorkspaceRenameUpdate,
     WorkspaceStatusResponse,
     WorkspaceStatusUpdate,
     WorkspaceTagsResponse,
@@ -384,6 +386,33 @@ def list_projects(
     return WorkspaceObjectList(objects=manager.list_projects())
 
 
+@router.post("/notes", response_model=WorkspaceObjectResponse)
+def create_note(
+    payload: WorkspaceObjectCreate,
+    manager: WorkspaceManager = Depends(get_workspace_manager),
+) -> WorkspaceObjectResponse:
+    try:
+        return WorkspaceObjectResponse(
+            object=manager.create_note(payload.title, payload.color)
+        )
+    except WorkspaceManagerError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.put("/objects/{object_id}/color", response_model=WorkspaceObjectResponse)
+def update_object_color(
+    object_id: str,
+    payload: WorkspaceColorUpdate,
+    manager: WorkspaceManager = Depends(get_workspace_manager),
+) -> WorkspaceObjectResponse:
+    try:
+        return WorkspaceObjectResponse(
+            object=manager.set_object_color(object_id, payload.color)
+        )
+    except WorkspaceManagerError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
 @router.post("/projects", response_model=WorkspaceObjectDetail)
 def create_project(
     payload: WorkspaceObjectCreate,
@@ -437,3 +466,26 @@ def read_brainstorm(
         return WorkspaceObjectDetail(object=item, content=content)
     except WorkspaceManagerError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@router.get("/objects/{object_id}/pdf-highlights", response_model=PdfHighlights)
+def read_pdf_highlights(
+    object_id: str,
+    manager: WorkspaceManager = Depends(get_workspace_manager),
+) -> PdfHighlights:
+    try:
+        return manager.read_pdf_highlights(object_id)
+    except WorkspaceManagerError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.put("/objects/{object_id}/pdf-highlights", response_model=PdfHighlights)
+def save_pdf_highlights(
+    object_id: str,
+    payload: PdfHighlights,
+    manager: WorkspaceManager = Depends(get_workspace_manager),
+) -> PdfHighlights:
+    try:
+        return manager.save_pdf_highlights(object_id, payload)
+    except WorkspaceManagerError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
